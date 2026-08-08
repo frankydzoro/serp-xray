@@ -22,6 +22,7 @@ class GapItem(BaseModel):
     found_in_user_page: bool
     priority: str  # critical, high, medium, low
     recommendation: str
+    found_on_urls: list[dict] = []  # [{url, title, position}, ...]
 
 
 class AnalysisReport(BaseModel):

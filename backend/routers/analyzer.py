@@ -63,10 +63,18 @@ async def analyze(req: AnalyzeRequest):
 
     page_entities = await asyncio.gather(*(extract_for_page(p) for p in pages))
 
-    # Собираем все сущности
+    # Собираем все сущности + карту entity → URLs
     all_entities: list[dict] = []
+    entity_urls: dict[str, list[dict]] = {}  # entity_name_lower → [{url, title, position}]
     for pe in page_entities:
         all_entities.extend(pe["entities"])
+        for e in pe["entities"]:
+            name = e["name"].lower()
+            if name not in entity_urls:
+                entity_urls[name] = []
+            url_info = {"url": pe["url"], "title": pe["title"], "position": pe["position"]}
+            if url_info not in entity_urls[name]:
+                entity_urls[name].append(url_info)
 
     # Сущности топ-3 для gap-анализа
     top3_entities: list[dict] = []
@@ -109,6 +117,7 @@ async def analyze(req: AnalyzeRequest):
             found_in_user_page=g.get("found_in_user_page", False),
             priority=g.get("priority", "medium"),
             recommendation=g.get("recommendation", ""),
+            found_on_urls=entity_urls.get(g["entity"].lower(), []),
         )
         for g in gaps
     ]

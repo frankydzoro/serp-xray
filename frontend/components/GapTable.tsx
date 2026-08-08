@@ -9,6 +9,7 @@ interface GapItem {
   recommendation: string;
   found_in_top3: boolean;
   found_in_user_page: boolean;
+  found_on_urls: { url: string; title: string; position: number }[];
 }
 
 interface Props {
@@ -26,7 +27,7 @@ export default function GapTable({ gaps }: Props) {
   if (gaps.length === 0) {
     return (
       <div className="text-center p-6 text-muted-foreground">
-        No gaps found  your page covers all key entities
+        No gaps found — your page covers all key entities
       </div>
     );
   }
@@ -40,8 +41,7 @@ export default function GapTable({ gaps }: Props) {
             <th className="text-left p-2">Type</th>
             <th className="text-left p-2">Priority</th>
             <th className="text-left p-2">Recommendation</th>
-            <th className="text-center p-2">In top-3</th>
-            <th className="text-center p-2">Your page</th>
+            <th className="text-left p-2">Found on URLs</th>
           </tr>
         </thead>
         <tbody>
@@ -55,9 +55,24 @@ export default function GapTable({ gaps }: Props) {
                 </Badge>
               </td>
               <td className="p-2 max-w-xs">{gap.recommendation}</td>
-              <td className="p-2 text-center">{gap.found_in_top3 ? "✓" : ""}</td>
-              <td className="p-2 text-center">
-                {gap.found_in_user_page ? "✓" : "✗"}
+              <td className="p-2">
+                <div className="flex flex-col gap-1">
+                  {(gap.found_on_urls || []).slice(0, 5).map((u, j) => (
+                    <a
+                      key={j}
+                      href={u.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-primary hover:underline truncate max-w-[250px] block"
+                      title={u.url}
+                    >
+                      #{u.position} {u.title || u.url}
+                    </a>
+                  ))}
+                  {(gap.found_on_urls || []).length === 0 && (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </div>
               </td>
             </tr>
           ))}

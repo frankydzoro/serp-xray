@@ -54,11 +54,10 @@ export default function ReportPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Entities</p><p className="text-xl font-bold">{data.entities_found}</p></CardContent></Card>
         <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Gaps</p><p className="text-xl font-bold text-red-400">{data.gaps?.length || 0}</p></CardContent></Card>
         <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Top-3 coverage</p><p className="text-xl font-bold">{data.top3_entity_coverage || 0}%</p></CardContent></Card>
-        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Your page</p><p className="text-xl font-bold">{data.user_entity_coverage || 0}%</p></CardContent></Card>
       </div>
 
       <Tabs defaultValue="gaps">
