@@ -26,7 +26,7 @@ export default function GapTable({ gaps }: Props) {
   if (gaps.length === 0) {
     return (
       <div className="text-center p-6 text-muted-foreground">
-        No gaps found — your page covers all key entities
+        No gaps found  your page covers all key entities
       </div>
     );
   }
@@ -55,7 +55,7 @@ export default function GapTable({ gaps }: Props) {
                 </Badge>
               </td>
               <td className="p-2 max-w-xs">{gap.recommendation}</td>
-              <td className="p-2 text-center">{gap.found_in_top3 ? "✓" : "—"}</td>
+              <td className="p-2 text-center">{gap.found_in_top3 ? "✓" : ""}</td>
               <td className="p-2 text-center">
                 {gap.found_in_user_page ? "✓" : "✗"}
               </td>

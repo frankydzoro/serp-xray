@@ -49,8 +49,8 @@ export default function ReportPage() {
           <h1 className="text-xl font-bold truncate max-w-lg">{data.query}</h1>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={async () => handleDownload("md")}>📄 Download MD</Button>
-          <Button size="sm" variant="outline" onClick={async () => handleDownload("pdf")}>📕 Download PDF</Button>
+          <Button size="sm" variant="outline" onClick={async () => handleDownload("md")}> Download MD</Button>
+          <Button size="sm" variant="outline" onClick={async () => handleDownload("pdf")}> Download PDF</Button>
         </div>
       </div>
 
@@ -63,8 +63,8 @@ export default function ReportPage() {
 
       <Tabs defaultValue="gaps">
         <TabsList>
-          <TabsTrigger value="gaps">🕳 Gaps</TabsTrigger>
-          <TabsTrigger value="checklist">✅ Checklist</TabsTrigger>
+          <TabsTrigger value="gaps"> Gaps</TabsTrigger>
+          <TabsTrigger value="checklist"> Checklist</TabsTrigger>
         </TabsList>
         <TabsContent value="gaps"><Card><CardContent className="pt-4"><GapTable gaps={data.gaps || []} /></CardContent></Card></TabsContent>
         <TabsContent value="checklist"><Card><CardContent className="pt-4"><Checklist items={data.checklist || []} /></CardContent></Card></TabsContent>

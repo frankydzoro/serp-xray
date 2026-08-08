@@ -94,7 +94,7 @@ export default function HistoryPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">📜 Analysis History</h1>
+        <h1 className="text-2xl font-bold"> Analysis History</h1>
         <span className="text-sm text-muted-foreground">{items.length} records</span>
       </div>
 
@@ -110,13 +110,13 @@ export default function HistoryPage() {
             </span>
             <div className="flex-1" />
             <Button size="sm" variant="outline" disabled={selected.size === 0} onClick={() => bulkExport("md")}>
-              📄 Download MD
+               Download MD
             </Button>
             <Button size="sm" variant="outline" disabled={selected.size === 0} onClick={() => bulkExport("pdf")}>
-              📕 Download PDF
+               Download PDF
             </Button>
             <Button size="sm" variant="destructive" disabled={selected.size === 0} onClick={bulkDelete}>
-              🗑 Delete ({selected.size})
+               Delete ({selected.size})
             </Button>
           </CardContent>
         </Card>
@@ -163,7 +163,7 @@ export default function HistoryPage() {
                     <Link href={`/report/${item.id}`} className="text-primary hover:underline text-xs px-2 py-1">Open</Link>
                     <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground hover:text-red-400"
                       onClick={() => deleteOne(item.id)} disabled={actionLoading === item.id}>
-                      {actionLoading === item.id ? "..." : "🗑"}
+                      {actionLoading === item.id ? "..." : ""}
                     </Button>
                   </div>
                 </td>

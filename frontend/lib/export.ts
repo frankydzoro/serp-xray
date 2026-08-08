@@ -50,7 +50,7 @@ export function downloadMarkdown(report: ReportData) {
   lines.push("");
 
   if (report.gaps?.length) {
-    lines.push("## 🔴 Gaps");
+    lines.push("##  Gaps");
     lines.push("");
     lines.push("| Priority | Entity | Type | Recommendation |");
     lines.push("|----------|--------|------|----------------|");
@@ -63,7 +63,7 @@ export function downloadMarkdown(report: ReportData) {
   }
 
   if (report.checklist?.length) {
-    lines.push("## ✅ Checklist");
+    lines.push("##  Checklist");
     lines.push("");
     for (const item of report.checklist) {
       lines.push(`- ${item}`);

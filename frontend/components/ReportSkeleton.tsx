@@ -4,11 +4,11 @@ import { useState, useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 
 const STAGES = [
-  "🔍 Searching top-20 results...",
-  "📄 Fetching page content...",
-  "🧠 Extracting entities via LLM...",
-  "🕳 Analyzing gaps...",
-  "📋 Building checklist...",
+  "Searching top-20 results...",
+  "Fetching page content...",
+  "Extracting entities via LLM...",
+  "Analyzing gaps...",
+  "Building checklist...",
 ];
 
 export default function ReportSkeleton() {
@@ -57,7 +57,7 @@ export default function ReportSkeleton() {
                 }`}
               >
                 <span className="text-lg">
-                  {i < stage ? "✅" : i === stage ? "⏳" : "○"}
+                  {i < stage ? "" : i === stage ? "" : ""}
                 </span>
                 <span className="text-sm">{label}</span>
               </div>
@@ -65,7 +65,7 @@ export default function ReportSkeleton() {
           </div>
 
           <div className="text-sm text-muted-foreground">
-            ⏱ Elapsed: <span className="font-mono text-primary">{elapsedStr}</span>
+             Elapsed: <span className="font-mono text-primary">{elapsedStr}</span>
           </div>
 
           <div className="w-full max-w-md bg-muted rounded-full h-1.5 overflow-hidden">
