@@ -134,3 +134,24 @@ def cache_entities(url: str, entities: list[dict]) -> None:
     )
     conn.commit()
     conn.close()
+
+
+def delete_analysis(analysis_id: str) -> bool:
+    conn = get_connection()
+    cursor = conn.execute("DELETE FROM analyses WHERE id = ?", (analysis_id,))
+    conn.commit()
+    deleted = cursor.rowcount > 0
+    conn.close()
+    return deleted
+
+
+def delete_analyses_bulk(ids: list[str]) -> int:
+    conn = get_connection()
+    placeholders = ",".join("?" for _ in ids)
+    cursor = conn.execute(
+        f"DELETE FROM analyses WHERE id IN ({placeholders})", ids
+    )
+    conn.commit()
+    deleted = cursor.rowcount
+    conn.close()
+    return deleted
