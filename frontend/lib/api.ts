@@ -27,8 +27,17 @@ export interface AnalysisStatus {
 }
 
 export async function getAnalysisStatus(id: string): Promise<AnalysisStatus> {
-  const resp = await fetch(`${API_BASE}/api/analyze/${id}/status`);
-  if (!resp.ok) throw new Error("Status check failed");
+  const url = `${API_BASE}/api/analyze/${id}/status`;
+  let resp: Response;
+  try {
+    resp = await fetch(url);
+  } catch (e: any) {
+    throw new Error(`Network error: ${e.message} (${url})`);
+  }
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    throw new Error(`HTTP ${resp.status} from ${url}: ${body.slice(0, 200)}`);
+  }
   return resp.json();
 }
 

@@ -1,6 +1,9 @@
 import uuid
 import asyncio
+import logging
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from models.schemas import (
     AnalyzeRequest, AnalyzeResponse, AnalyzeStatus,
@@ -222,13 +225,20 @@ async def analyze(req: AnalyzeRequest, background_tasks: BackgroundTasks):
 @router.get("/analyze/{analysis_id}/status", response_model=AnalyzeStatus)
 async def get_status(analysis_id: str):
     """Возвращает текущий статус анализа."""
-    data = get_analysis_status(analysis_id)
+    try:
+        data = get_analysis_status(analysis_id)
+    except Exception as e:
+        logger.exception("Failed to get analysis status for %s", analysis_id)
+        raise HTTPException(status_code=500, detail=f"Internal error: {e}")
     if not data:
         raise HTTPException(status_code=404, detail="Analysis not found")
 
     result = None
     if data.get("status") == "completed" and data.get("result_json"):
-        result = AnalysisReport(**data["result_json"])
+        try:
+            result = AnalysisReport(**data["result_json"])
+        except Exception:
+            logger.exception("Failed to parse result_json for %s", analysis_id)
 
     return AnalyzeStatus(
         id=data["id"],
