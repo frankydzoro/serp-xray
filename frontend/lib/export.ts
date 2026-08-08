@@ -12,10 +12,12 @@ interface ReportData {
   query: string;
   entities_found: number;
   user_entity_coverage: number;
-  top3_entity_coverage: number;
+  competitor_entity_coverage: number;
   gaps: GapItem[];
   checklist: string[];
   timestamp?: string;
+  competitor_pages?: { url: string; title: string; position: number; engine: string; text: string }[];
+  user_page_text?: string;
 }
 
 let fontReady = false;
@@ -44,7 +46,7 @@ export function downloadMarkdown(report: ReportData) {
   lines.push(`**ID:** \`${report.id}\``);
   if (report.timestamp) lines.push(`**Date:** ${report.timestamp}`);
   lines.push(`**Entities found:** ${report.entities_found}`);
-  lines.push(`**Top-3 coverage:** ${report.top3_entity_coverage}%`);
+  lines.push(`**Competitor coverage:** ${report.competitor_entity_coverage}%`);
   lines.push(`**Your page coverage:** ${report.user_entity_coverage}%`);
   lines.push(`**Gaps:** ${report.gaps?.length || 0}`);
   lines.push("");
@@ -58,15 +60,6 @@ export function downloadMarkdown(report: ReportData) {
       lines.push(
         `| ${g.priority} | ${g.entity} | ${g.entity_type} | ${g.recommendation} |`
       );
-    }
-    lines.push("");
-  }
-
-  if (report.checklist?.length) {
-    lines.push("##  Checklist");
-    lines.push("");
-    for (const item of report.checklist) {
-      lines.push(`- ${item}`);
     }
     lines.push("");
   }
@@ -140,22 +133,6 @@ export async function downloadPDF(report: ReportData) {
       y += Math.max(5, recLines.length * 3.5);
     }
     y += 8;
-  }
-
-  // Checklist
-  if (report.checklist?.length) {
-    if (y > 260) { doc.addPage(); y = margin; }
-    doc.setFontSize(11);
-    doc.setTextColor(0);
-    doc.text("Checklist", margin, y);
-    y += 6;
-    doc.setFontSize(8);
-    for (const item of report.checklist) {
-      if (y > 275) { doc.addPage(); y = margin; }
-      const lines = doc.splitTextToSize(`• ${item}`, pageWidth - margin * 2);
-      doc.text(lines, margin, y);
-      y += lines.length * 4;
-    }
   }
 
   doc.save(`serp-xray-${report.id}.pdf`);

@@ -7,64 +7,57 @@ from db import get_setting
 
 async def analyze_gaps(
     user_entities: list[dict],
-    top3_entities: list[dict],
+    competitor_entities: list[dict],
     model: str | None = None,
     query: str = "",
 ) -> list[dict]:
-    """Сравнивает сущности пользователя с топ-3 и находит разрывы через LLM.
+    """Сравнивает сущности пользователя со ВСЕМИ сущностями конкурентов из топа выдачи.
+
+    competitor_entities — уже сгруппированные сущности:
+        [{name, type, frequency, descriptions: [...], source_urls: [...]}, ...]
 
     Returns:
-        [{entity, entity_type, priority, recommendation}, ...]
+        [{entity, entity_type, priority, competitor_description, recommendation,
+          found_in_competitors, found_in_user_page}, ...]
     """
-    if not top3_entities:
+    if not competitor_entities:
         return []
 
-    # Быстрый pre-check: какие сущности из топ-3 отсутствуют у пользователя
-    user_names = {e.get("name", "").lower() for e in user_entities}
-    top3_names = {e.get("name", "").lower() for e in top3_entities}
-
-    # Если пользователь не передал URL  все топ3-сущности = разрывы (без LLM)
-    if len(user_entities) == 0 and top3_entities:
+    # Быстрый pre-check для quick-gaps (без URL пользователя)
+    if len(user_entities) == 0 and competitor_entities:
         seen = set()
         quick_gaps = []
-        for e in top3_entities:
+        for e in competitor_entities:
             name = e.get("name", "")
             if name and name.lower() not in seen:
                 seen.add(name.lower())
+                freq = e.get("frequency", 1)
+                # Выбираем лучшее описание (первое непустое)
+                descriptions = e.get("descriptions", [])
+                best_desc = next((d for d in descriptions if d), "")
                 quick_gaps.append({
                     "entity": name,
                     "entity_type": e.get("type", "Concept"),
-                    "found_in_top3": True,
+                    "found_in_competitors": True,
                     "found_in_user_page": False,
-                    "priority": "high",
+                    "priority": "critical" if freq >= 2 else "high",
+                    "competitor_description": best_desc,
                     "recommendation": f"Add information about '{name}' to the page",
                 })
-        # Сортируем: сначала критические (частота 2+)
-        # Используем поле frequency (из группировки) или считаем повторы
-        for g in quick_gaps:
-            freq = next(
-                (e.get("frequency", 1) for e in top3_entities if e.get("name", "").lower() == g["entity"].lower()),
-                1
-            )
-            if freq >= 2:
-                g["priority"] = "critical"
         quick_gaps.sort(key=lambda g: {"critical": 0, "high": 1}.get(g["priority"], 1))
         return quick_gaps[:20]
 
-    missing_names = top3_names - user_names
-    if not missing_names:
-        return []
-
+    # LLM-based gap analysis
     model = model or get_setting("model") or DEFAULT_MODEL
     prompt_template = get_setting("gap_prompt") or GAP_ANALYSIS_PROMPT
 
     # Формируем читаемые списки для LLM
     user_str = json.dumps(user_entities, ensure_ascii=False, indent=2)
-    top3_str = json.dumps(top3_entities, ensure_ascii=False, indent=2)
+    competitor_str = json.dumps(competitor_entities, ensure_ascii=False, indent=2)
 
     prompt = prompt_template.format(
         user_entities=user_str,
-        top3_entities=top3_str,
+        competitor_entities=competitor_str,
         query=query,
     )
 
@@ -93,12 +86,14 @@ async def analyze_gaps(
     except json.JSONDecodeError:
         return []
 
-    # Обогащаем каждый gap полями found_in_top3 / found_in_user_page
+    # Обогащаем каждый gap
+    user_names = {e.get("name", "").lower() for e in user_entities}
     for g in gaps:
         g.setdefault("entity_type", "Concept")
         g.setdefault("priority", "medium")
+        g.setdefault("competitor_description", "")
         g.setdefault("recommendation", f"Add information about {g['entity']}")
-        g["found_in_top3"] = True
+        g["found_in_competitors"] = True
         g["found_in_user_page"] = g["entity"].lower() in user_names
 
     # Сортируем по приоритету

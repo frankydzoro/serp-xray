@@ -22,8 +22,10 @@ def init_db():
             id TEXT PRIMARY KEY,
             query TEXT NOT NULL,
             url TEXT,
-            result_json TEXT NOT NULL,
+            result_json TEXT NOT NULL DEFAULT '{}',
             model_used TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'running',
+            stage TEXT NOT NULL DEFAULT 'searching',
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
@@ -44,8 +46,104 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_entities_cache_extracted
             ON entities_cache(extracted_at);
     """)
+
+    # Миграция: добавляем колонки если их нет
+    try:
+        conn.execute("ALTER TABLE analyses ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE analyses ADD COLUMN stage TEXT NOT NULL DEFAULT 'done'")
+    except sqlite3.OperationalError:
+        pass
+
     conn.commit()
     conn.close()
+
+
+def create_running_analysis(
+    analysis_id: str,
+    query: str,
+    model: str,
+    url: str | None = None,
+) -> None:
+    """Создаёт запись анализа со статусом running."""
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO analyses (id, query, url, model_used, result_json, status, stage) VALUES (?, ?, ?, ?, '{}', 'running', 'searching')",
+        (analysis_id, query, url, model),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_analysis_status(analysis_id: str, stage: str) -> None:
+    """Обновляет стадию без изменения статуса."""
+    conn = get_connection()
+    conn.execute(
+        "UPDATE analyses SET stage = ? WHERE id = ?", (stage, analysis_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def complete_analysis(analysis_id: str, result: dict) -> None:
+    """Завершает анализ: сохраняет результат, ставит status=completed."""
+    conn = get_connection()
+    conn.execute(
+        "UPDATE analyses SET result_json = ?, status = 'completed', stage = 'done' WHERE id = ?",
+        (json.dumps(result, ensure_ascii=False), analysis_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def fail_analysis(analysis_id: str, error: str) -> None:
+    """Помечает анализ как failed."""
+    conn = get_connection()
+    conn.execute(
+        "UPDATE analyses SET result_json = ?, status = 'failed', stage = 'error' WHERE id = ?",
+        (json.dumps({"error": error}), analysis_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_analysis_status(analysis_id: str, timeout_minutes: int = 10) -> dict | None:
+    """Возвращает статус и stage анализа. Автоматически помечает как failed при таймауте."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT id, status, stage, result_json, created_at FROM analyses WHERE id = ?",
+        (analysis_id,),
+    ).fetchone()
+    if not row:
+        conn.close()
+        return None
+    d = dict(row)
+    try:
+        d["result_json"] = json.loads(d["result_json"])
+    except (json.JSONDecodeError, KeyError):
+        d["result_json"] = {}
+
+    # Таймаут для застрявших анализов
+    if d["status"] == "running":
+        try:
+            created_at = datetime.fromisoformat(d["created_at"])
+            elapsed = (datetime.now(timezone.utc) - created_at).total_seconds()
+            if elapsed > timeout_minutes * 60:
+                conn.execute(
+                    "UPDATE analyses SET result_json = ?, status = 'failed', stage = 'error' WHERE id = ?",
+                    (json.dumps({"error": f"Timed out after {int(elapsed)}s"}), analysis_id),
+                )
+                conn.commit()
+                d["status"] = "failed"
+                d["stage"] = "error"
+                d["result_json"] = {"error": f"Timed out after {int(elapsed)}s"}
+        except (ValueError, KeyError):
+            pass
+
+    conn.close()
+    return d
 
 
 def save_analysis(
@@ -55,13 +153,8 @@ def save_analysis(
     model: str,
     url: str | None = None,
 ) -> None:
-    conn = get_connection()
-    conn.execute(
-        "INSERT OR REPLACE INTO analyses (id, query, url, result_json, model_used) VALUES (?, ?, ?, ?, ?)",
-        (analysis_id, query, url, json.dumps(result, ensure_ascii=False), model),
-    )
-    conn.commit()
-    conn.close()
+    """Совместимость: сохраняет завершённый анализ (старый интерфейс)."""
+    complete_analysis(analysis_id, result)
 
 
 def get_analysis(analysis_id: str) -> dict | None:
@@ -70,7 +163,10 @@ def get_analysis(analysis_id: str) -> dict | None:
     conn.close()
     if row:
         result = dict(row)
-        result["result_json"] = json.loads(result["result_json"])
+        try:
+            result["result_json"] = json.loads(result["result_json"])
+        except (json.JSONDecodeError, KeyError):
+            result["result_json"] = {}
         return result
     return None
 
@@ -78,7 +174,7 @@ def get_analysis(analysis_id: str) -> dict | None:
 def list_analyses(limit: int = 50) -> list[dict]:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT id, query, url, model_used, created_at, result_json FROM analyses ORDER BY created_at DESC LIMIT ?",
+        "SELECT id, query, url, model_used, status, stage, created_at, result_json FROM analyses ORDER BY created_at DESC LIMIT ?",
         (limit,),
     ).fetchall()
     conn.close()

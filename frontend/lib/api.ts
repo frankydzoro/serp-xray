@@ -1,15 +1,34 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export async function analyzeQuery(query: string, url?: string, engine = "google") {
+export async function analyzeQuery(
+  query: string,
+  url?: string,
+  userText?: string,
+  engine = "google"
+): Promise<{ id: string }> {
   const resp = await fetch(`${API_BASE}/api/analyze`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, url, engine }),
+    body: JSON.stringify({ query, url, user_text: userText || null, engine }),
   });
   if (!resp.ok) {
     const err = await resp.text();
     throw new Error(err);
   }
+  return resp.json();
+}
+
+export interface AnalysisStatus {
+  id: string;
+  status: "running" | "completed" | "failed";
+  stage: "searching" | "fetching" | "extracting" | "analyzing" | "building" | "done" | "error";
+  result: any | null;
+  error: string | null;
+}
+
+export async function getAnalysisStatus(id: string): Promise<AnalysisStatus> {
+  const resp = await fetch(`${API_BASE}/api/analyze/${id}/status`);
+  if (!resp.ok) throw new Error("Status check failed");
   return resp.json();
 }
 

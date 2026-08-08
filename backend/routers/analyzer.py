@@ -1,183 +1,239 @@
 import uuid
 import asyncio
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException
-from models.schemas import AnalyzeRequest, AnalysisReport, Entity, GapItem
+from fastapi import APIRouter, HTTPException, BackgroundTasks
+from models.schemas import (
+    AnalyzeRequest, AnalyzeResponse, AnalyzeStatus,
+    AnalysisReport, Entity, GapItem, CompetitorPage,
+)
 from services.serp import fetch_top20, fetch_page_text
 from services.entity_extractor import extract_entities
 from services.gap_analyzer import analyze_gaps
-from db import save_analysis, get_cached_entities, cache_entities, get_setting
+from db import (
+    create_running_analysis, update_analysis_status,
+    complete_analysis, fail_analysis, get_analysis_status,
+    get_cached_entities, cache_entities, get_setting,
+)
 
 router = APIRouter(prefix="/api", tags=["analyzer"])
-
-# Семафор для ограничения конкурентных запросов к LLM
 SEMAPHORE = asyncio.Semaphore(5)
 
 
 async def _extract_with_cache(url: str, text: str, model: str) -> list[dict]:
-    """Извлекает сущности с кэшированием."""
     cached = get_cached_entities(url)
     if cached:
         return cached
-
     entities = await extract_entities(text, url, model)
     if entities:
         cache_entities(url, entities)
     return entities
 
 
-@router.post("/analyze", response_model=AnalysisReport)
-async def analyze(req: AnalyzeRequest):
-    """Основной pipeline анализа поисковой выдачи."""
+async def _run_pipeline(
+    analysis_id: str,
+    query: str,
+    engine: str,
+    url: str | None,
+    user_text: str | None,
+    model: str,
+):
+    """Фоновый pipeline: выполняет анализ и обновляет статус в БД."""
+    try:
+        # Stage: searching
+        update_analysis_status(analysis_id, "searching")
+        serp_results = await fetch_top20(query, engine)
+        if not serp_results:
+            fail_analysis(analysis_id, "No results found for query")
+            return
+
+        # Stage: fetching
+        update_analysis_status(analysis_id, "fetching")
+
+        async def fetch_text(r):
+            try:
+                text = await fetch_page_text(r["url"])
+                return {
+                    "url": r["url"], "title": r["title"], "text": text,
+                    "position": r["position"], "engine": r.get("engine", engine),
+                }
+            except Exception:
+                return {
+                    "url": r["url"], "title": r["title"], "text": r["snippet"],
+                    "position": r["position"], "engine": r.get("engine", engine),
+                }
+
+        # Для 'both' берём 20 страниц (10 Google + 10 Yandex), иначе 10
+        page_limit = 20 if engine == "both" else 10
+        competitors = serp_results[:page_limit]
+        pages = await asyncio.gather(*(fetch_text(r) for r in competitors))
+
+        # Сохраняем тексты конкурентов для отчёта
+        competitor_pages = [
+            CompetitorPage(
+                url=p["url"],
+                title=p["title"],
+                position=p["position"],
+                engine=p["engine"],
+                text=p["text"],
+            )
+            for p in pages
+        ]
+
+        # Stage: extracting
+        update_analysis_status(analysis_id, "extracting")
+
+        async def extract_for_page(p):
+            async with SEMAPHORE:
+                entities = await _extract_with_cache(p["url"], p["text"], model)
+                return {"url": p["url"], "title": p["title"], "position": p["position"], "entities": entities}
+
+        page_entities = await asyncio.gather(*(extract_for_page(p) for p in pages))
+
+        # Собираем сущности со всех страниц конкурентов
+        all_entities: list[dict] = []
+        entity_urls: dict[str, list[dict]] = {}
+        for pe in page_entities:
+            all_entities.extend(pe["entities"])
+            for e in pe["entities"]:
+                name = e["name"].lower()
+                if name not in entity_urls:
+                    entity_urls[name] = []
+                url_info = {"url": pe["url"], "title": pe["title"], "position": pe["position"]}
+                if url_info not in entity_urls[name]:
+                    entity_urls[name].append(url_info)
+
+        # Группируем ВСЕ сущности конкурентов по имени: frequency + descriptions + source_urls
+        competitor_grouped: dict[str, dict] = {}
+        for e in all_entities:
+            key = e["name"].lower()
+            if key not in competitor_grouped:
+                competitor_grouped[key] = {
+                    "name": e["name"],
+                    "type": e["type"],
+                    "confidence": e["confidence"],
+                    "frequency": 1,
+                    "descriptions": [],
+                    "source_urls": [],
+                }
+                desc = e.get("description", "")
+                if desc:
+                    competitor_grouped[key]["descriptions"].append(desc)
+                src = e.get("source_url", "")
+                if src and src not in competitor_grouped[key]["source_urls"]:
+                    competitor_grouped[key]["source_urls"].append(src)
+            else:
+                competitor_grouped[key]["frequency"] += 1
+                desc = e.get("description", "")
+                if desc and desc not in competitor_grouped[key]["descriptions"]:
+                    competitor_grouped[key]["descriptions"].append(desc)
+                src = e.get("source_url", "")
+                if src and src not in competitor_grouped[key]["source_urls"]:
+                    competitor_grouped[key]["source_urls"].append(src)
+                # Берём максимальный confidence
+                if e.get("confidence", 0) > competitor_grouped[key]["confidence"]:
+                    competitor_grouped[key]["confidence"] = e["confidence"]
+
+        competitor_entities = sorted(
+            competitor_grouped.values(),
+            key=lambda e: e["frequency"],
+            reverse=True,
+        )
+
+        # Страница пользователя
+        user_entities: list[dict] = []
+        report_user_text = ""
+        if url or user_text:
+            update_analysis_status(analysis_id, "analyzing")
+            try:
+                if user_text:
+                    report_user_text = user_text.strip()
+                    user_entities = await _extract_with_cache("user-text://", report_user_text, model)
+                elif url:
+                    report_user_text = await fetch_page_text(url)
+                    user_entities = await _extract_with_cache(url, report_user_text, model)
+            except Exception:
+                pass
+
+        # Stage: analyzing gaps
+        update_analysis_status(analysis_id, "analyzing")
+        gaps = await analyze_gaps(user_entities, competitor_entities, model, query)
+
+        # Stage: building report
+        update_analysis_status(analysis_id, "building")
+
+        unique_entity_names = {e["name"].lower() for e in all_entities}
+        user_entity_names = {e["name"].lower() for e in user_entities}
+        competitor_entity_names = set(competitor_grouped.keys())
+
+        user_coverage = 0.0
+        if unique_entity_names:
+            user_coverage = round(
+                len(user_entity_names & unique_entity_names) / len(unique_entity_names) * 100, 1
+            )
+
+        gap_items = [
+            GapItem(
+                entity=g["entity"],
+                entity_type=g.get("entity_type", "Concept"),
+                found_in_competitors=g.get("found_in_competitors", True),
+                found_in_user_page=g.get("found_in_user_page", False),
+                priority=g.get("priority", "medium"),
+                recommendation=g.get("recommendation", ""),
+                competitor_description=g.get("competitor_description", ""),
+                found_on_urls=entity_urls.get(g["entity"].lower(), []),
+            )
+            for g in gaps
+        ]
+
+        report = AnalysisReport(
+            id=analysis_id,
+            query=query,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            entities_found=len(all_entities),
+            user_entity_coverage=user_coverage,
+            competitor_entity_coverage=100.0,
+            gaps=gap_items[:20],
+            competitor_pages=competitor_pages,
+            user_page_text=report_user_text,
+        )
+
+        complete_analysis(analysis_id, report.model_dump())
+    except Exception as e:
+        fail_analysis(analysis_id, str(e))
+
+
+@router.post("/analyze", response_model=AnalyzeResponse)
+async def analyze(req: AnalyzeRequest, background_tasks: BackgroundTasks):
+    """Запускает анализ и сразу возвращает ID. Pipeline выполняется в фоне."""
     model = get_setting("model") or "openai/gpt-4o"
     analysis_id = str(uuid.uuid4())[:12]
-    started_at = datetime.now(timezone.utc)
 
-    # 1. Получаем топ-20 из SerpAPI
-    try:
-        serp_results = await fetch_top20(req.query, req.engine)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"SerpAPI error: {str(e)}")
+    # Создаём запись сразу
+    create_running_analysis(analysis_id, req.query, model, req.url)
 
-    if not serp_results:
-        raise HTTPException(status_code=404, detail="No results found for query")
-
-    # 2. Загружаем текст каждой страницы (топ-10 для скорости, остальные  сниппеты)
-    async def fetch_text(r):
-        try:
-            text = await fetch_page_text(r["url"])
-            return {"url": r["url"], "title": r["title"], "text": text, "position": r["position"]}
-        except Exception:
-            # fallback: используем сниппет
-            return {"url": r["url"], "title": r["title"], "text": r["snippet"], "position": r["position"]}
-
-    # Параллельная загрузка топ-10
-    top10 = serp_results[:10]
-    pages = await asyncio.gather(*(fetch_text(r) for r in top10))
-
-    # 3. Извлекаем сущности для каждой страницы (с кэшем)
-    async def extract_for_page(p):
-        async with SEMAPHORE:
-            entities = await _extract_with_cache(p["url"], p["text"], model)
-            return {"url": p["url"], "title": p["title"], "position": p["position"], "entities": entities}
-
-    page_entities = await asyncio.gather(*(extract_for_page(p) for p in pages))
-
-    # Собираем все сущности + карту entity → URLs
-    all_entities: list[dict] = []
-    entity_urls: dict[str, list[dict]] = {}  # entity_name_lower → [{url, title, position}]
-    for pe in page_entities:
-        all_entities.extend(pe["entities"])
-        for e in pe["entities"]:
-            name = e["name"].lower()
-            if name not in entity_urls:
-                entity_urls[name] = []
-            url_info = {"url": pe["url"], "title": pe["title"], "position": pe["position"]}
-            if url_info not in entity_urls[name]:
-                entity_urls[name].append(url_info)
-
-    # Сущности топ-3 для gap-анализа — группируем по частоте на страницах
-    top3_raw: list[dict] = []
-    for pe in page_entities[:3]:
-        top3_raw.extend(pe["entities"])
-
-    # Дедуплицируем, считаем частоту, сохраняем позиции
-    top3_grouped: dict[str, dict] = {}
-    for e in top3_raw:
-        key = e["name"].lower()
-        if key not in top3_grouped:
-            top3_grouped[key] = {**e, "frequency": 1, "positions": [e.get("source_url", "")]}
-        else:
-            top3_grouped[key]["frequency"] += 1
-            url = e.get("source_url", "")
-            if url not in top3_grouped[key]["positions"]:
-                top3_grouped[key]["positions"].append(url)
-    top3_entities = sorted(top3_grouped.values(), key=lambda e: e["frequency"], reverse=True)
-
-    # 4. Извлекаем сущности со страницы пользователя (если URL передан)
-    user_entities: list[dict] = []
-    if req.url:
-        try:
-            user_text = await fetch_page_text(req.url)
-            user_entities = await _extract_with_cache(req.url, user_text, model)
-        except Exception:
-            pass  # Продолжаем без страницы пользователя
-
-    # 5. Gap-анализ
-    gaps = await analyze_gaps(user_entities, top3_entities, model, req.query)
-
-    # 6. Формируем чек-лист
-    checklist = _generate_checklist(gaps, req.url is not None and len(user_entities) > 0)
-
-    # 7. Подсчитываем покрытие
-    unique_entity_names = {e["name"].lower() for e in all_entities}
-    user_entity_names = {e["name"].lower() for e in user_entities}
-    top3_entity_names = {e["name"].lower() for e in top3_entities}
-
-    top3_coverage = 100.0 if not top3_entity_names else round(
-        len(top3_entity_names) / len(top3_entity_names) * 100, 1
-    )
-    user_coverage = 0.0
-    if unique_entity_names:
-        user_coverage = round(len(user_entity_names & unique_entity_names) / len(unique_entity_names) * 100, 1)
-
-    # 8. Формируем отчёт
-    gap_items = [
-        GapItem(
-            entity=g["entity"],
-            entity_type=g.get("entity_type", "Concept"),
-            found_in_top3=g.get("found_in_top3", True),
-            found_in_user_page=g.get("found_in_user_page", False),
-            priority=g.get("priority", "medium"),
-            recommendation=g.get("recommendation", ""),
-            found_on_urls=entity_urls.get(g["entity"].lower(), []),
-        )
-        for g in gaps
-    ]
-
-    report = AnalysisReport(
-        id=analysis_id,
-        query=req.query,
-        timestamp=started_at.isoformat(),
-        entities_found=len(all_entities),
-        user_entity_coverage=user_coverage,
-        top3_entity_coverage=top3_coverage,
-        gaps=gap_items[:20],  # топ-20 разрывов
-        checklist=checklist[:15],
+    # Запускаем pipeline в фоне
+    background_tasks.add_task(
+        _run_pipeline, analysis_id, req.query, req.engine, req.url, req.user_text, model,
     )
 
-    # 9. Сохраняем в БД
-    save_analysis(analysis_id, req.query, report.model_dump(), model, req.url)
-
-    return report
+    return AnalyzeResponse(id=analysis_id, status="running", stage="searching")
 
 
-def _generate_checklist(gaps: list[dict], has_user_page: bool) -> list[str]:
-    """Generates a checklist based on gaps."""
-    items = []
+@router.get("/analyze/{analysis_id}/status", response_model=AnalyzeStatus)
+async def get_status(analysis_id: str):
+    """Возвращает текущий статус анализа."""
+    data = get_analysis_status(analysis_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Analysis not found")
 
-    critical = [g for g in gaps if g.get("priority") == "critical"]
-    high = [g for g in gaps if g.get("priority") == "high"]
+    result = None
+    if data.get("status") == "completed" and data.get("result_json"):
+        result = AnalysisReport(**data["result_json"])
 
-    if critical:
-        items.append(f"CRITICAL GAPS ({len(critical)}):")
-        for g in critical[:5]:
-            rec = g.get("recommendation") or f"Add: {g['entity']}"
-            items.append(f"  • {rec}")
-
-    if high:
-        items.append(f"HIGH PRIORITY GAPS ({len(high)}):")
-        for g in high[:5]:
-            rec = g.get("recommendation") or f"Add: {g['entity']}"
-            items.append(f"  • {rec}")
-
-    if not critical and not high:
-        items.append("No critical gaps found")
-
-    if has_user_page:
-        items.append("Compare your page to the top-3 by these entities and fill the gaps")
-
-    items.append("Verify heading structure (H1-H3) for key entity presence")
-    items.append("Ensure main entities appear in the first fold of the page")
-
-    return items
+    return AnalyzeStatus(
+        id=data["id"],
+        status=data.get("status", "running"),
+        stage=data.get("stage", "unknown"),
+        result=result,
+        error=data.get("result_json", {}).get("error") if data.get("status") == "failed" else None,
+    )

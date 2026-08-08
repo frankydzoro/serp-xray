@@ -75,8 +75,8 @@ Backend talks to:
 5. **English-only UI.** All visible text in English. Backend prompts in Russian (user's choice — content is Russian).
 6. **No emojis.** Removed from all source files.
 7. **Two gap-analysis modes:**
-   - **Quick-gaps** (no user URL): all top-3 entities → gaps, priority by `frequency` field
-   - **LLM** (with user URL): gap analysis via OpenRouter with `query` as topic anchor
+   - **Quick-gaps** (no user URL): all competitor entities → gaps, priority by `frequency` across all top-10 pages
+   - **LLM** (with user URL): semantic gap analysis via OpenRouter — compares ALL top-10 competitors vs user page using entity descriptions
 
 ## Database Schema
 
@@ -104,6 +104,7 @@ entities_cache (url TEXT PK, entities_json TEXT, extracted_at TEXT)
 ## Prompt Design (Critical)
 
 ### Entity Extraction
+- Fields: name, type, confidence, **description** (1-2 sentences on how entity is presented in text, Russian)
 - Types: Person, Organization, Concept, Product, Event, Location, Metric
 - Product > Organization (Salesforce=Org, Sales Cloud=Product)
 - Metric > Concept (if numeric value present)
@@ -112,10 +113,11 @@ entities_cache (url TEXT PK, entities_json TEXT, extracted_at TEXT)
 - Stop-words: доставка, ремонт, услуги, сервис, компания, решение, пользователи, стулья, столы, etc.
 
 ### Gap Analysis
-- Direction: top-3 → user ONLY
-- Topic anchor: `{query}` helps LLM filter relevance
-- `frequency` field: entity appears on N top-3 pages → critical if ≥2
-- Deduplication: same entity different forms → one gap
+- Direction: ALL top-10 competitors → user ONLY
+- Uses entity descriptions for semantic matching (not just name dedup)
+- `frequency` field: entity appears on N competitor pages → critical if ≥2
+- Output includes `competitor_description` — shown to user as gap context
+- Placeholders: `{user_entities}`, `{competitor_entities}`, `{query}`
 - Max 10 gaps, sorted by priority
 
 ### Known LLM Behaviors
