@@ -109,7 +109,7 @@ def fail_analysis(analysis_id: str, error: str) -> None:
     conn.close()
 
 
-def get_analysis_status(analysis_id: str, timeout_minutes: int = 10) -> dict | None:
+def get_analysis_status(analysis_id: str, timeout_minutes: int = 20) -> dict | None:
     """Возвращает статус и stage анализа. Автоматически помечает как failed при таймауте."""
     conn = get_connection()
     row = conn.execute(

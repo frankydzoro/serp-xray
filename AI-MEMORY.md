@@ -9,7 +9,7 @@ SERP X-Ray — local web tool for competitive SERP entity analysis.
 Takes a search query → fetches top-20 via SerpAPI (Google/Yandex/both) → extracts Knowledge Graph entities via OpenRouter LLM → compares against user's page → builds gap graph + prioritized checklist.
 
 **Path:** `~/serp-xray/`  
-**Git:** branch `feat/background-pipeline-status`, 4 commits on main + 1 on feature branch  
+**Git:** branch `feat/background-pipeline-status`, uncommitted changes (see Recent Changes)
 **Owner:** Petr Grishechkin, SEO specialist, Russian-speaking, prefers English UI  
 **No remote configured** — `git remote` is empty.
 
@@ -29,14 +29,15 @@ Backend talks to:
 
 Analysis runs as a FastAPI `BackgroundTasks` with 5 stages:
 
-1. **searching** — SerpAPI fetch top-20
-2. **fetching** — fetch page text (10–20 pages)
-3. **extracting** — LLM entity extraction per page (with semaphore=5)
-4. **analyzing** — gap analysis (quick-gaps or LLM)
+1. **searching** — SerpAPI fetch top-20 (Google/Yandex/both)
+2. **fetching** — fetch page text (10 pages per engine, 20 total for 'both')
+3. **extracting** — LLM entity extraction per page (with semaphore=5, timeout=30s per call)
+4. **analyzing** — gap analysis (quick-gaps or LLM, timeout=30s)
 5. **building** — assemble report
 
 Each stage updates `stage` column in DB. Frontend polls `GET /api/analyze/{id}/status` every 2s.  
-Auto-timeout: stuck analyses (10+ min) auto-marked as `failed`.
+Auto-timeout: stuck analyses (20+ min) auto-marked as `failed`.  
+**Logging**: each stage logged with `logger.info()` including analysis_id and key metrics.
 
 ## Directory Layout
 
@@ -123,7 +124,7 @@ CREATE TABLE entities_cache (
 - `update_analysis_status(id, stage)` — updates stage only
 - `complete_analysis(id, result)` — saves result, sets status=completed
 - `fail_analysis(id, error)` — sets status=failed, stage=error
-- `get_analysis_status(id)` — returns status/stage, auto-timeouts after 10min
+- `get_analysis_status(id)` — returns status/stage, auto-timeouts after 20min
 - `save_analysis(id, query, result, model, url)` — legacy compat, delegates to complete_analysis
 
 ## API Endpoints
@@ -154,7 +155,8 @@ CREATE TABLE entities_cache (
    - **Quick-gaps** (no user URL): all competitor entities → gaps, priority by `frequency`
    - **LLM** (with user URL): semantic gap analysis via OpenRouter
 8. **Background pipeline with polling** — analysis runs as BackgroundTasks, frontend polls `/status` every 2s.
-9. **Auto-timeout** — stuck analyses (running >10min) auto-fail in `get_analysis_status()`.
+9. **Auto-timeout** — stuck analyses (running >20min) auto-fail in `get_analysis_status()`.
+10. **Description fallback chain** — 3 levels: LLM description → competitor entity descriptions → generated `"Type: Name"` → `"Entity: Name"`.
 
 ## Prompt Design (Critical)
 
@@ -165,6 +167,7 @@ CREATE TABLE entities_cache (
 - Metric > Concept (if numeric value present)
 - Maximum 15 entities, sorted by confidence descending
 - Post-processing: truncate to 15 + stop-words filter
+- **Fallback**: if LLM returns empty description → generated `"Type: Name"` in `entity_extractor.py`
 
 ### Gap Analysis
 - Direction: ALL top-10 competitors → user ONLY
@@ -172,6 +175,7 @@ CREATE TABLE entities_cache (
 - `frequency` field: entity appears on N competitor pages → critical if ≥2
 - Placeholders: `{user_entities}`, `{competitor_entities}`, `{query}`
 - Max 10 gaps, sorted by priority
+- **Description enrichment**: if LLM returns empty `competitor_description` → `_find_entity_description()` searches in original competitor data → fallback to generated text
 
 ## SerpAPI Notes
 
@@ -179,6 +183,18 @@ CREATE TABLE entities_cache (
 - Yandex: `engine=yandex`, parameter `text` (NOT `q`!)
 - Both: parallel fetch → deduplicate by URL → merge
 - Free tier: 100 req/month. Key in `~/.hermes/.env` as `SERPAPI_API_KEY`.
+- **`fields` parameter**: added `organic_results(link,title,snippet,position),search_metadata(status),error` — reduces response size 5-10× (strips knowledge_graph, related_questions, ads, inline_images, etc.)
+- **pages per engine**: 10 for single engine, 20 total for 'both'
+
+## OpenRouter
+
+- API key: `~/.hermes/.env` as `OPENROUTER_API_KEY`
+- Base URL: `https://openrouter.ai/api/v1`
+- Model set in DB `settings`, default `openai/gpt-4o`
+- Available: `openai/gpt-4o`, `anthropic/claude-sonnet-4`, `google/gemini-2.5-flash`, `deepseek/deepseek-v4-pro`
+- Tests use `openai/gpt-4o-mini` (cheap)
+- SDK: `openai` Python client with `base_url` override
+- **Timeout**: 30s per LLM call (reduced from 60s — faster failure detection)
 
 ## How to Run
 
@@ -203,10 +219,16 @@ source venv/bin/activate
 python -m tests.test_prompts
 ```
 
+## Recent Changes (2026-08-08, uncommitted)
+
+1. **Empty Description fix** — 3 levels of fallback: `entity_extractor.py` generates `"Type: Name"` if LLM returns empty description; `gap_analyzer.py` has `_find_entity_description()` to enrich gaps from competitor data; quick-gaps generate fallback text.
+2. **Timeout tuning** — analysis timeout 10→20 min; OpenRouter calls 60→30s; pipeline now logs every stage with `logger.info()`.
+3. **SerpAPI `fields` parameter** — Google and Yandex calls now request only needed fields, cutting response size ~10×.
+
 ## Pitfalls & Gotchas
 
 1. **Yandex uses `text` not `q`** — 400 Bad Request otherwise.
-2. **`.format()` doubles braces** — `{{"entities": [...]}}` in prompt strings, `{page_text}` as placeholder.
+2. **`.format()` doubles braces** — `{{\"entities\": [...]}}` in prompt strings, `{page_text}` as placeholder.
 3. **No `--reload` with uvicorn background** — reloader changes cwd to `/tmp`, breaks imports.
 4. **`str | None` needs Python 3.10+** — venv must use python3.11.
 5. **Entity limit was 16 despite prompt** — fixed with post-process truncate in `entity_extractor.py`.
@@ -215,12 +237,5 @@ python -m tests.test_prompts
 8. **`result_json` must be in INSERT** — column has `NOT NULL`, include `'{}'` explicitly in `create_running_analysis()`.
 9. **DB migration via `SELECT *` is dangerous** — column order may differ between old and new schema. Use explicit column lists.
 10. **SQLite gets `database is locked`** if CLI and backend access DB simultaneously. Kill backend before running `sqlite3` CLI directly.
-
-## OpenRouter
-
-- API key: `~/.hermes/.env` as `OPENROUTER_API_KEY`
-- Base URL: `https://openrouter.ai/api/v1`
-- Model set in DB `settings`, default `deepseek/deepseek-v4-pro`
-- Available: `openai/gpt-4o`, `anthropic/claude-sonnet-4`, `google/gemini-2.5-flash`, `deepseek/deepseek-v4-pro`
-- Tests use `openai/gpt-4o-mini` (cheap)
-- SDK: `openai` Python client with `base_url` override
+11. **Empty competitor_description** — LLM may return gaps without descriptions. Fixed with `_find_entity_description()` enrichment in `gap_analyzer.py` + fallback in `entity_extractor.py`. Three-tier chain: LLM → competitor data → generated.
+12. **Pipeline timeout at 10min** — deepseek-v4-pro can be slow (30-40s per extraction). 20 pages × 30-40s ÷ semaphore 5 = 120-160s. Increased to 20min, reduced OpenRouter timeout to 30s.

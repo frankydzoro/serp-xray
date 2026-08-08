@@ -5,6 +5,20 @@ from prompts.default import GAP_ANALYSIS_PROMPT
 from db import get_setting
 
 
+def _find_entity_description(entity_name: str, competitor_entities: list[dict]) -> str:
+    """Ищет описание сущности в сгруппированных данных конкурентов.
+    Если описания нет — генерирует fallback из name + type."""
+    name_lower = entity_name.lower()
+    for ce in competitor_entities:
+        if ce.get("name", "").lower() == name_lower:
+            descriptions = ce.get("descriptions", [])
+            best_desc = next((d for d in descriptions if d), "")
+            if best_desc:
+                return best_desc
+            return f"{ce.get('type', 'Concept')}: {ce.get('name', entity_name)}"
+    return f"Entity: {entity_name}"
+
+
 async def analyze_gaps(
     user_entities: list[dict],
     competitor_entities: list[dict],
@@ -35,6 +49,8 @@ async def analyze_gaps(
                 # Выбираем лучшее описание (первое непустое)
                 descriptions = e.get("descriptions", [])
                 best_desc = next((d for d in descriptions if d), "")
+                if not best_desc:
+                    best_desc = f"{e.get('type', 'Concept')}: {name}"
                 quick_gaps.append({
                     "entity": name,
                     "entity_type": e.get("type", "Concept"),
@@ -55,11 +71,22 @@ async def analyze_gaps(
     user_str = json.dumps(user_entities, ensure_ascii=False, indent=2)
     competitor_str = json.dumps(competitor_entities, ensure_ascii=False, indent=2)
 
-    prompt = prompt_template.format(
-        user_entities=user_str,
-        competitor_entities=competitor_str,
-        query=query,
-    )
+    try:
+        prompt = prompt_template.format(
+            user_entities=user_str,
+            competitor_entities=competitor_str,
+            query=query,
+        )
+    except KeyError as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Gap prompt in DB has invalid placeholder %s, falling back to default", e
+        )
+        prompt = GAP_ANALYSIS_PROMPT.format(
+            user_entities=user_str,
+            competitor_entities=competitor_str,
+            query=query,
+        )
 
     client = AsyncOpenAI(
         api_key=OPENROUTER_API_KEY,
@@ -71,7 +98,7 @@ async def analyze_gaps(
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         temperature=0.1,
-        timeout=60,
+        timeout=30,
     )
 
     content = resp.choices[0].message.content
@@ -91,10 +118,14 @@ async def analyze_gaps(
     for g in gaps:
         g.setdefault("entity_type", "Concept")
         g.setdefault("priority", "medium")
-        g.setdefault("competitor_description", "")
         g.setdefault("recommendation", f"Add information about {g['entity']}")
         g["found_in_competitors"] = True
         g["found_in_user_page"] = g["entity"].lower() in user_names
+        # Если LLM не вернул описание — ищем в исходных данных конкурентов
+        if not g.get("competitor_description"):
+            g["competitor_description"] = _find_entity_description(
+                g["entity"], competitor_entities
+            )
 
     # Сортируем по приоритету
     priority_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}

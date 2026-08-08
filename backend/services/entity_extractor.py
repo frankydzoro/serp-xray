@@ -16,7 +16,14 @@ async def extract_entities(page_text: str, url: str, model: str | None = None) -
 
     # Обрезаем текст до лимита
     truncated_text = page_text[:MAX_PAGE_CHARS]
-    prompt = prompt_template.format(page_text=truncated_text)
+    try:
+        prompt = prompt_template.format(page_text=truncated_text)
+    except KeyError as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Entity prompt in DB has invalid placeholder %s, falling back to default", e
+        )
+        prompt = ENTITY_EXTRACTION_PROMPT.format(page_text=truncated_text)
 
     client = AsyncOpenAI(
         api_key=OPENROUTER_API_KEY,
@@ -28,7 +35,7 @@ async def extract_entities(page_text: str, url: str, model: str | None = None) -
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         temperature=0.1,
-        timeout=60,
+        timeout=30,
     )
 
     content = resp.choices[0].message.content
@@ -47,9 +54,10 @@ async def extract_entities(page_text: str, url: str, model: str | None = None) -
         except json.JSONDecodeError:
             return []
 
-    # Добавляем source_url к каждой сущности
+    # Добавляем source_url и fallback description к каждой сущности
     for e in entities:
-        e.setdefault("description", "")
+        if not e.get("description"):
+            e["description"] = f"{e.get('type', 'Entity')}: {e.get('name', 'Unknown')}"
         e["source_url"] = url
 
     # Post-processing: сортируем по confidence и обрезаем до 15
