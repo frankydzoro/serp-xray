@@ -86,3 +86,67 @@ export async function resetPrompts() {
   });
   return resp.json();
 }
+
+/* ── Models ─────────────────────────────── */
+export interface ModelInfo {
+  id: string;
+  name: string;
+  canonical_slug?: string;
+  description: string;
+  context_length: number;
+  pricing: {
+    prompt: string;
+    completion: string;
+    image: string;
+    request: string;
+  };
+  architecture: {
+    modality: string;
+    input_modalities: string[];
+    output_modalities: string[];
+    instruct_type: string;
+    tokenizer: string;
+  };
+  top_provider: {
+    name?: string;
+    context_length: number;
+    is_moderated: boolean;
+    max_completion_tokens: number;
+  };
+  supported_parameters: string[];
+  created: number;
+  knowledge_cutoff?: string;
+  per_request_limits?: any;
+}
+
+export interface ModelsResponse {
+  data: ModelInfo[];
+  total: number;
+  total_all: number;
+}
+
+export async function fetchModels(params?: {
+  q?: string;
+  modality?: string;
+  sort?: string;
+  min_price?: number;
+  max_price?: number;
+  min_context?: number;
+  category?: string;
+  providers?: string;
+}): Promise<ModelsResponse> {
+  const searchParams = new URLSearchParams();
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null && v !== "") {
+        searchParams.set(k, String(v));
+      }
+    }
+  }
+  const qs = searchParams.toString();
+  const resp = await fetch(`${API_BASE}/api/models${qs ? `?${qs}` : ""}`);
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch models: ${resp.status}`);
+  }
+  return resp.json();
+}
