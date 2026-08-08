@@ -7,11 +7,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { getModel, updateModel, getPrompts, updatePrompts, resetPrompts } from "@/lib/api";
 
 const MODELS = [
-  { value: "openai/gpt-4o", label: "GPT-4o — balanced price/quality" },
-  { value: "anthropic/claude-sonnet-4", label: "Claude Sonnet 4 — best quality" },
-  { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash — fast & cheap" },
-  { value: "deepseek/deepseek-v4-pro", label: "DeepSeek V4 Pro — good for Russian" },
-  { value: "openai/gpt-4o-mini", label: "GPT-4o Mini — budget" },
+  { value: "openai/gpt-4o", label: "GPT-4o  balanced price/quality" },
+  { value: "anthropic/claude-sonnet-4", label: "Claude Sonnet 4  best quality" },
+  { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash  fast & cheap" },
+  { value: "deepseek/deepseek-v4-pro", label: "DeepSeek V4 Pro  good for Russian" },
+  { value: "openai/gpt-4o-mini", label: "GPT-4o Mini  budget" },
 ];
 
 export default function AdminPrompts() {
@@ -33,7 +33,7 @@ export default function AdminPrompts() {
     if (!m) return;
     setModel(m);
     await updateModel(m);
-    setMsg("✅ Model saved");
+    setMsg("Model saved");
     setTimeout(() => setMsg(""), 2000);
   };
 
@@ -41,7 +41,7 @@ export default function AdminPrompts() {
     setSaving(true);
     await updatePrompts(entityPrompt, gapPrompt);
     setSaving(false);
-    setMsg("✅ Prompts saved");
+    setMsg("Prompts saved");
     setTimeout(() => setMsg(""), 2000);
   };
 
@@ -49,7 +49,7 @@ export default function AdminPrompts() {
     const d = await resetPrompts();
     setEntityPrompt(d.entity_prompt);
     setGapPrompt(d.gap_prompt);
-    setMsg("✅ Reset to defaults");
+    setMsg("Reset to defaults");
     setTimeout(() => setMsg(""), 2000);
   };
 
@@ -90,8 +90,8 @@ export default function AdminPrompts() {
       </div>
 
       <div className="flex gap-3">
-        <Button onClick={handlePromptsSave} disabled={saving}>💾 Save Prompts</Button>
-        <Button variant="outline" onClick={handleReset}>↩ Reset to Defaults</Button>
+        <Button onClick={handlePromptsSave} disabled={saving}> Save Prompts</Button>
+        <Button variant="outline" onClick={handleReset}> Reset to Defaults</Button>
       </div>
     </div>
   );

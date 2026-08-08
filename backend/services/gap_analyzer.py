@@ -22,7 +22,7 @@ async def analyze_gaps(
     user_names = {e.get("name", "").lower() for e in user_entities}
     top3_names = {e.get("name", "").lower() for e in top3_entities}
 
-    # Если пользователь не передал URL — все топ3-сущности = разрывы (без LLM)
+    # Если пользователь не передал URL  все топ3-сущности = разрывы (без LLM)
     if len(user_entities) == 0 and top3_entities:
         seen = set()
         quick_gaps = []

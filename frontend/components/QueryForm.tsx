@@ -12,9 +12,9 @@ interface Props {
 }
 
 const ENGINE_OPTIONS: { value: Engine; label: string; desc: string }[] = [
-  { value: "google", label: "🇬 Google", desc: "Google only" },
-  { value: "yandex", label: "🇾 Yandex", desc: "Yandex only" },
-  { value: "both", label: "🇬+🇾 Both", desc: "Google + Yandex" },
+  { value: "google", label: " Google", desc: "Google only" },
+  { value: "yandex", label: " Yandex", desc: "Yandex only" },
+  { value: "both", label: "+ Both", desc: "Google + Yandex" },
 ];
 
 export default function QueryForm({ onAnalyze, loading }: Props) {
@@ -51,7 +51,7 @@ export default function QueryForm({ onAnalyze, loading }: Props) {
             disabled={loading}
           />
           <p className="text-xs text-muted-foreground mt-1">
-            If provided — compares your page to the top-3 results
+            If provided  compares your page to the top-3 results
           </p>
         </div>
 
@@ -79,7 +79,7 @@ export default function QueryForm({ onAnalyze, loading }: Props) {
       </div>
 
       <Button type="submit" disabled={loading || !query.trim()} className="w-full">
-        {loading ? "⏳ Analyzing..." : "🔍 Analyze"}
+        {loading ? " Analyzing..." : "Analyze"}
       </Button>
     </form>
   );

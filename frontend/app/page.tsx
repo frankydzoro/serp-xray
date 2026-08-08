@@ -60,7 +60,7 @@ export default function HomePage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>SERP X-Ray — competitive analysis</CardTitle>
+          <CardTitle>SERP X-Ray  competitive analysis</CardTitle>
           <p className="text-sm text-muted-foreground">
             Enter a search query to see which entities appear in the top-20
             results and which are missing from your page
@@ -82,10 +82,10 @@ export default function HomePage() {
       {report && !loading && (
         <Tabs defaultValue="overview">
           <TabsList>
-            <TabsTrigger value="overview">📊 Overview</TabsTrigger>
-            <TabsTrigger value="graph">🕸 Entity Graph</TabsTrigger>
-            <TabsTrigger value="gaps">🕳 Gaps ({report.gaps.length})</TabsTrigger>
-            <TabsTrigger value="checklist">✅ Checklist ({report.checklist.length})</TabsTrigger>
+            <TabsTrigger value="overview"> Overview</TabsTrigger>
+            <TabsTrigger value="graph"> Entity Graph</TabsTrigger>
+            <TabsTrigger value="gaps"> Gaps ({report.gaps.length})</TabsTrigger>
+            <TabsTrigger value="checklist"> Checklist ({report.checklist.length})</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">

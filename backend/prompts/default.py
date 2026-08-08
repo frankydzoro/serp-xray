@@ -31,4 +31,4 @@ Return STRICT JSON in this format:
 
 IMPORTANT: if there are no gaps, return {{"gaps": []}}. Do not invent non-existent gaps.
 Note: if an entity from the top-3 is absent on the user's page, it is a gap.
-Priority critical — only if the entity appears in 2+ top-3 pages and is directly related to the query topic."""
+Priority critical  only if the entity appears in 2+ top-3 pages and is directly related to the query topic."""

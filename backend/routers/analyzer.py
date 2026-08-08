@@ -42,7 +42,7 @@ async def analyze(req: AnalyzeRequest):
     if not serp_results:
         raise HTTPException(status_code=404, detail="No results found for query")
 
-    # 2. Загружаем текст каждой страницы (топ-10 для скорости, остальные — сниппеты)
+    # 2. Загружаем текст каждой страницы (топ-10 для скорости, остальные  сниппеты)
     async def fetch_text(r):
         try:
             text = await fetch_page_text(r["url"])
@@ -138,24 +138,24 @@ def _generate_checklist(gaps: list[dict], has_user_page: bool) -> list[str]:
     high = [g for g in gaps if g.get("priority") == "high"]
 
     if critical:
-        items.append(f"🔴 CRITICAL GAPS ({len(critical)}):")
+        items.append(f"CRITICAL GAPS ({len(critical)}):")
         for g in critical[:5]:
             rec = g.get("recommendation") or f"Add: {g['entity']}"
             items.append(f"  • {rec}")
 
     if high:
-        items.append(f"🟠 HIGH PRIORITY GAPS ({len(high)}):")
+        items.append(f"HIGH PRIORITY GAPS ({len(high)}):")
         for g in high[:5]:
             rec = g.get("recommendation") or f"Add: {g['entity']}"
             items.append(f"  • {rec}")
 
     if not critical and not high:
-        items.append("✅ No critical gaps found")
+        items.append("No critical gaps found")
 
     if has_user_page:
-        items.append("📝 Compare your page to the top-3 by these entities and fill the gaps")
+        items.append("Compare your page to the top-3 by these entities and fill the gaps")
 
-    items.append("🔍 Verify heading structure (H1-H3) for key entity presence")
-    items.append("📊 Ensure main entities appear in the first fold of the page")
+    items.append("Verify heading structure (H1-H3) for key entity presence")
+    items.append("Ensure main entities appear in the first fold of the page")
 
     return items
