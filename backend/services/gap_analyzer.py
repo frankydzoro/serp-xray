@@ -39,13 +39,14 @@ async def analyze_gaps(
                     "priority": "high",
                     "recommendation": f"Add information about '{name}' to the page",
                 })
-        # Сортируем: сначала критические (встречаются 2+ раза)
-        name_counts = {}
-        for e in top3_entities:
-            n = e.get("name", "").lower()
-            name_counts[n] = name_counts.get(n, 0) + 1
+        # Сортируем: сначала критические (частота 2+)
+        # Используем поле frequency (из группировки) или считаем повторы
         for g in quick_gaps:
-            if name_counts.get(g["entity"].lower(), 0) >= 2:
+            freq = next(
+                (e.get("frequency", 1) for e in top3_entities if e.get("name", "").lower() == g["entity"].lower()),
+                1
+            )
+            if freq >= 2:
                 g["priority"] = "critical"
         quick_gaps.sort(key=lambda g: {"critical": 0, "high": 1}.get(g["priority"], 1))
         return quick_gaps[:20]

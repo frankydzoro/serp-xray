@@ -76,10 +76,23 @@ async def analyze(req: AnalyzeRequest):
             if url_info not in entity_urls[name]:
                 entity_urls[name].append(url_info)
 
-    # Сущности топ-3 для gap-анализа
-    top3_entities: list[dict] = []
+    # Сущности топ-3 для gap-анализа — группируем по частоте на страницах
+    top3_raw: list[dict] = []
     for pe in page_entities[:3]:
-        top3_entities.extend(pe["entities"])
+        top3_raw.extend(pe["entities"])
+
+    # Дедуплицируем, считаем частоту, сохраняем позиции
+    top3_grouped: dict[str, dict] = {}
+    for e in top3_raw:
+        key = e["name"].lower()
+        if key not in top3_grouped:
+            top3_grouped[key] = {**e, "frequency": 1, "positions": [e.get("source_url", "")]}
+        else:
+            top3_grouped[key]["frequency"] += 1
+            url = e.get("source_url", "")
+            if url not in top3_grouped[key]["positions"]:
+                top3_grouped[key]["positions"].append(url)
+    top3_entities = sorted(top3_grouped.values(), key=lambda e: e["frequency"], reverse=True)
 
     # 4. Извлекаем сущности со страницы пользователя (если URL передан)
     user_entities: list[dict] = []

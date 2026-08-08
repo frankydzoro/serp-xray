@@ -53,4 +53,15 @@ async def extract_entities(page_text: str, url: str, model: str | None = None) -
 
     # Post-processing: сортируем по confidence и обрезаем до 15
     entities.sort(key=lambda e: e.get("confidence", 0), reverse=True)
+
+    # Фильтр common words — удаляем заведомо не-сущности
+    stop_entities = {
+        "доставка", "ремонт", "услуги", "сервис", "компания",
+        "решение", "пользователи", "клиенты", "товар", "услуга",
+        "продукт", "система", "платформа", "приложение",
+        "главная", "контакты", "о нас", "каталог",
+        "стулья", "столы", "одежда", "обувь", "еда",
+    }
+    entities = [e for e in entities if e.get("name", "").lower() not in stop_entities]
+
     return entities[:15]
