@@ -91,7 +91,7 @@ async def analyze(req: AnalyzeRequest):
             pass  # Продолжаем без страницы пользователя
 
     # 5. Gap-анализ
-    gaps = await analyze_gaps(user_entities, top3_entities, model)
+    gaps = await analyze_gaps(user_entities, top3_entities, model, req.query)
 
     # 6. Формируем чек-лист
     checklist = _generate_checklist(gaps, req.url is not None and len(user_entities) > 0)

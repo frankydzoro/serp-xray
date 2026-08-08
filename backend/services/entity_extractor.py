@@ -51,4 +51,6 @@ async def extract_entities(page_text: str, url: str, model: str | None = None) -
     for e in entities:
         e["source_url"] = url
 
-    return entities
+    # Post-processing: сортируем по confidence и обрезаем до 15
+    entities.sort(key=lambda e: e.get("confidence", 0), reverse=True)
+    return entities[:15]
