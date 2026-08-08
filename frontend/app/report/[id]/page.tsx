@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import EntityGraph from "@/components/EntityGraph";
-import GapTable from "@/components/GapTable";
+import GapCard from "@/components/GapCard";
 import { getReport } from "@/lib/api";
 import { downloadMarkdown, downloadPDF } from "@/lib/export";
 
@@ -178,7 +178,7 @@ export default function ReportPage() {
         <SectionHeading title="Content Gaps" badge={`${gapCount}`} />
         <Card className="shadow-card border-border/60">
           <CardContent className="p-4">
-            <GapTable gaps={data.gaps || []} />
+            <GapCard gaps={data.gaps || []} />
           </CardContent>
         </Card>
       </section>
