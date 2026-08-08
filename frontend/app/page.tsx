@@ -109,25 +109,6 @@ export default function HomePage() {
                 </CardHeader>
               </Card>
             </div>
-
-            {report.user_entity_coverage > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Your page coverage</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="bg-muted rounded-full h-3 overflow-hidden">
-                    <div
-                      className="bg-primary h-full rounded-full transition-all"
-                      style={{ width: `${report.user_entity_coverage}%` }}
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {report.user_entity_coverage}% of top entities are covered on your page
-                  </p>
-                </CardContent>
-              </Card>
-            )}
           </TabsContent>
 
           <TabsContent value="graph">
