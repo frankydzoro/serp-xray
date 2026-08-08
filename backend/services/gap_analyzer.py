@@ -9,6 +9,7 @@ async def analyze_gaps(
     user_entities: list[dict],
     top3_entities: list[dict],
     model: str | None = None,
+    query: str = "",
 ) -> list[dict]:
     """Сравнивает сущности пользователя с топ-3 и находит разрывы через LLM.
 
@@ -63,6 +64,7 @@ async def analyze_gaps(
     prompt = prompt_template.format(
         user_entities=user_str,
         top3_entities=top3_str,
+        query=query,
     )
 
     client = AsyncOpenAI(
