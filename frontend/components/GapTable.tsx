@@ -7,7 +7,8 @@ interface GapItem {
   entity_type: string;
   priority: string;
   recommendation: string;
-  found_in_top3: boolean;
+  competitor_description: string;
+  found_in_competitors: boolean;
   found_in_user_page: boolean;
   found_on_urls: { url: string; title: string; position: number }[];
 }
@@ -39,6 +40,7 @@ export default function GapTable({ gaps }: Props) {
           <tr className="border-b border-border">
             <th className="text-left p-2">Entity</th>
             <th className="text-left p-2">Type</th>
+            <th className="text-left p-2">Description</th>
             <th className="text-left p-2">Priority</th>
             <th className="text-left p-2">Recommendation</th>
             <th className="text-left p-2">Found on URLs</th>
@@ -49,6 +51,9 @@ export default function GapTable({ gaps }: Props) {
             <tr key={i} className="border-b border-border/50 hover:bg-muted/30">
               <td className="p-2 font-medium">{gap.entity}</td>
               <td className="p-2 text-muted-foreground">{gap.entity_type}</td>
+              <td className="p-2 max-w-xs text-muted-foreground text-xs">
+                {gap.competitor_description || "—"}
+              </td>
               <td className="p-2">
                 <Badge variant={PRIORITY_COLORS[gap.priority] || "outline"}>
                   {gap.priority}

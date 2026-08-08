@@ -57,17 +57,17 @@ export default function QueryForm({ onAnalyze, loading }: Props) {
 
         <div className="w-48">
           <label className="text-sm font-medium mb-1 block">Search engine</label>
-          <div className="flex gap-1">
+          <div className="flex gap-1 bg-muted rounded-lg p-0.5">
             {ENGINE_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
                 type="button"
                 disabled={loading}
                 onClick={() => setEngine(opt.value)}
-                className={`flex-1 px-3 py-2 text-xs rounded-md border transition-colors ${
+                className={`flex-1 px-3 py-1.5 text-xs rounded-md font-medium transition-all duration-200 ${
                   engine === opt.value
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-card border-border hover:bg-muted text-muted-foreground"
+                    ? "bg-card text-foreground shadow-sm ring-1 ring-border"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
                 title={opt.desc}
               >

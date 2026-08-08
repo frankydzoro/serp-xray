@@ -4,25 +4,53 @@ from typing import Optional, Literal
 
 class AnalyzeRequest(BaseModel):
     query: str
-    url: Optional[str] = None  # URL страницы пользователя для сравнения
+    url: Optional[str] = None
+    user_text: Optional[str] = None
     engine: Literal["google", "yandex", "both"] = "google"
+
+
+class AnalyzeResponse(BaseModel):
+    """Immediate response — analysis ID for polling."""
+    id: str
+    status: str = "running"
+    stage: str = "searching"
+
+
+class AnalyzeStatus(BaseModel):
+    """Status polling response."""
+    id: str
+    status: str  # running, completed, failed
+    stage: str   # searching, fetching, extracting, analyzing, building, done, error
+    result: Optional["AnalysisReport"] = None
+    error: Optional[str] = None
 
 
 class Entity(BaseModel):
     name: str
-    type: str  # Person, Organization, Concept, Product, Event, Location, Metric
-    confidence: float  # 0-1
+    type: str
+    confidence: float
     source_url: str
+    description: str = ""
 
 
 class GapItem(BaseModel):
     entity: str
     entity_type: str
-    found_in_top3: bool
+    found_in_competitors: bool
     found_in_user_page: bool
-    priority: str  # critical, high, medium, low
+    priority: str
     recommendation: str
-    found_on_urls: list[dict] = []  # [{url, title, position}, ...]
+    competitor_description: str = ""
+    found_on_urls: list[dict] = []
+
+
+class CompetitorPage(BaseModel):
+    """Текст и метаданные страницы конкурента."""
+    url: str
+    title: str
+    position: int
+    engine: str
+    text: str
 
 
 class AnalysisReport(BaseModel):
@@ -30,10 +58,12 @@ class AnalysisReport(BaseModel):
     query: str
     timestamp: str
     entities_found: int
-    user_entity_coverage: float  # % покрытия (0-100)
-    top3_entity_coverage: float
+    user_entity_coverage: float
+    competitor_entity_coverage: float
     gaps: list[GapItem]
-    checklist: list[str]
+    checklist: list[str] = []
+    competitor_pages: list[CompetitorPage] = []
+    user_page_text: str = ""
 
 
 class ModelSetting(BaseModel):

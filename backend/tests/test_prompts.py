@@ -136,12 +136,17 @@ def test_entity_extraction():
         test("1.10 Multiple types used", len(types_found) >= 2,
              f"Types: {types_found}")
 
+        # Check description field
+        entities_with_desc = [e for e in entities if e.get("description")]
+        test("1.11 Description field present", len(entities_with_desc) >= 1,
+             f"Entities with description: {len(entities_with_desc)}/{len(entities)}")
+
         # Reproducibility
         raw2 = call_llm(prompt, temperature=0)
         data2 = extract_json(raw2)
         names2 = set(e["name"] for e in data2.get("entities", [])) if data2 else set()
         overlap = len(set(names) & names2)
-        test("1.11 Reproducible at temp=0", overlap >= max(len(names), len(names2)) * 0.7,
+        test("1.12 Reproducible at temp=0", overlap >= max(len(names), len(names2)) * 0.7,
              f"Overlap: {overlap}/{max(len(names), len(names2))}")
 
     # Test 2: Empty/boilerplate text
@@ -183,23 +188,23 @@ def test_gap_analysis():
 
     # Test 1: Normal case
     user_entities = [
-        {"name": "CRM", "type": "Concept", "confidence": 1.0},
-        {"name": "Salesforce", "type": "Product", "confidence": 0.9},
-        {"name": "малый бизнес", "type": "Concept", "confidence": 0.8},
+        {"name": "CRM", "type": "Concept", "confidence": 1.0, "description": "Customer Relationship Management system"},
+        {"name": "Salesforce", "type": "Product", "confidence": 0.9, "description": "Leading CRM platform"},
+        {"name": "малый бизнес", "type": "Concept", "confidence": 0.8, "description": "Target audience segment"},
     ]
-    top3_entities = [
-        {"name": "CRM", "type": "Concept", "confidence": 1.0},
-        {"name": "Salesforce", "type": "Product", "confidence": 0.9},
-        {"name": "HubSpot", "type": "Product", "confidence": 0.9},
-        {"name": "Zoho CRM", "type": "Product", "confidence": 0.85},
-        {"name": "интеграция", "type": "Concept", "confidence": 0.7},
-        {"name": "воронка продаж", "type": "Concept", "confidence": 0.8},
-        {"name": "Gartner", "type": "Organization", "confidence": 0.6},
+    competitor_entities = [
+        {"name": "CRM", "type": "Concept", "confidence": 1.0, "frequency": 3, "descriptions": ["CRM platform"], "source_urls": ["url1"]},
+        {"name": "Salesforce", "type": "Product", "confidence": 0.9, "frequency": 2, "descriptions": ["Cloud CRM by Salesforce"], "source_urls": ["url1"]},
+        {"name": "HubSpot", "type": "Product", "confidence": 0.9, "frequency": 2, "descriptions": ["Marketing and sales platform"], "source_urls": ["url2"]},
+        {"name": "Zoho CRM", "type": "Product", "confidence": 0.85, "frequency": 1, "descriptions": ["CRM for small teams"], "source_urls": ["url3"]},
+        {"name": "интеграция", "type": "Concept", "confidence": 0.7, "frequency": 1, "descriptions": [], "source_urls": []},
+        {"name": "воронка продаж", "type": "Concept", "confidence": 0.8, "frequency": 1, "descriptions": [], "source_urls": []},
+        {"name": "Gartner", "type": "Organization", "confidence": 0.6, "frequency": 1, "descriptions": ["Analyst firm"], "source_urls": ["url4"]},
     ]
 
     prompt = GAP_ANALYSIS_PROMPT.format(
         user_entities=json.dumps(user_entities, ensure_ascii=False),
-        top3_entities=json.dumps(top3_entities, ensure_ascii=False),
+        competitor_entities=json.dumps(competitor_entities, ensure_ascii=False),
         query="CRM for small business",
     )
     raw = call_llm(prompt, temperature=0)
@@ -220,14 +225,15 @@ def test_gap_analysis():
             has_type = g.get("entity_type") in ["Person", "Organization", "Concept", "Product", "Event", "Location", "Metric"]
             has_priority = g.get("priority") in ["critical", "high", "medium", "low"]
             has_rec = bool(g.get("recommendation"))
+            has_comp_desc = isinstance(g.get("competitor_description"), str)
             test(f"G1.4 Gap '{g.get('entity','?')}' has valid fields",
-                 has_entity and has_type and has_priority and has_rec)
+                 has_entity and has_type and has_priority and has_rec and has_comp_desc)
 
-        # Direction: only top3→user, not user→top3
+        # Direction: only competitors→user, not user→competitors
         user_names = {e["name"].lower() for e in user_entities}
         gap_names = {g["entity"].lower() for g in gaps}
         wrong_direction = gap_names & user_names
-        test("G1.5 Direction: top3→user only", len(wrong_direction) == 0,
+        test("G1.5 Direction: competitors→user only", len(wrong_direction) == 0,
              f"Wrong: {wrong_direction}")
 
         # No duplicates
@@ -257,15 +263,15 @@ def test_gap_analysis():
                  f"Sample: {gaps[0]['recommendation'][:80] if gaps else 'N/A'}")
 
         # No invented entities
-        top3_names = {e["name"].lower() for e in top3_entities}
-        invented = [g["entity"] for g in gaps if g["entity"].lower() not in top3_names]
+        comp_names = {e["name"].lower() for e in competitor_entities}
+        invented = [g["entity"] for g in gaps if g["entity"].lower() not in comp_names]
         test("G1.9 No invented entities", len(invented) == 0,
              f"Invented: {invented}")
 
     # Test 2: Empty inputs
     prompt_empty = GAP_ANALYSIS_PROMPT.format(
         user_entities="[]",
-        top3_entities="[]",
+        competitor_entities="[]",
         query="",
     )
     raw_empty = call_llm(prompt_empty, temperature=0)
@@ -277,7 +283,7 @@ def test_gap_analysis():
     # Test 3: Identical lists
     prompt_same = GAP_ANALYSIS_PROMPT.format(
         user_entities=json.dumps(user_entities, ensure_ascii=False),
-        top3_entities=json.dumps(user_entities, ensure_ascii=False),
+        competitor_entities=json.dumps(user_entities, ensure_ascii=False),
         query="test",
     )
     raw_same = call_llm(prompt_same, temperature=0)

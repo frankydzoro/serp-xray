@@ -1,33 +1,49 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Suspense } from "react";
+import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
+import AppNav from "@/components/AppNav";
 import "./globals.css";
 
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+const jakarta = Plus_Jakarta_Sans({
+  variable: "--font-sans",
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700", "800"],
+});
+
+const jetbrains = JetBrains_Mono({
+  variable: "--font-mono",
+  subsets: ["latin"],
+  weight: ["400", "500"],
+});
 
 export const metadata: Metadata = {
-  title: "SERP X-Ray  competitive SERP analysis",
-  description: "Local tool for entity analysis in search results via OpenRouter + SerpAPI",
+  title: "SERP X-Ray — competitive SERP analysis",
+  description:
+    "Extract entities from search results, find content gaps, and get actionable recommendations via OpenRouter + SerpAPI",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    <html
+      lang="en"
+      className={`${jakarta.variable} ${jetbrains.variable} h-full antialiased`}
+    >
+      <head>
+        <style>{`
+          :root {
+            --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+            --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+            --font-heading: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+          }
+        `}</style>
+      </head>
       <body className="min-h-full flex flex-col bg-background text-foreground">
-        <header className="border-b border-border bg-card">
-          <div className="max-w-6xl mx-auto px-4 h-14 flex items-center gap-6">
-            <Link href="/" className="font-bold text-lg hover:text-primary">
-               SERP X-Ray
-            </Link>
-            <nav className="flex gap-4 text-sm">
-              <Link href="/" className="hover:text-primary transition-colors">Analysis</Link>
-              <Link href="/history" className="hover:text-primary transition-colors">History</Link>
-              <Link href="/admin" className="hover:text-primary transition-colors">Admin</Link>
-            </nav>
-          </div>
-        </header>
-        <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-6">{children}</main>
+        <AppNav />
+        <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-8">
+          <Suspense fallback={<div className="flex items-center justify-center py-20"><div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" /></div>}>
+            {children}
+          </Suspense>
+        </main>
       </body>
     </html>
   );

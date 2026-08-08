@@ -49,6 +49,7 @@ async def extract_entities(page_text: str, url: str, model: str | None = None) -
 
     # Добавляем source_url к каждой сущности
     for e in entities:
+        e.setdefault("description", "")
         e["source_url"] = url
 
     # Post-processing: сортируем по confidence и обрезаем до 15

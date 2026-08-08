@@ -14,15 +14,17 @@ interface Props {
   entities: Entity[];
 }
 
-const TYPE_COLORS: Record<string, string> = {
-  Person: "#e74c3c",
-  Organization: "#3498db",
-  Concept: "#2ecc71",
-  Product: "#f39c12",
-  Event: "#9b59b6",
-  Location: "#1abc9c",
-  Metric: "#e67e22",
+const TYPE_COLORS: Record<string, { fill: string; stroke: string }> = {
+  Person:      { fill: "#FEE2E2", stroke: "#EF4444" },
+  Organization:{ fill: "#DBEAFE", stroke: "#2563EB" },
+  Concept:     { fill: "#D1FAE5", stroke: "#10B981" },
+  Product:     { fill: "#FEF3C7", stroke: "#F59E0B" },
+  Event:       { fill: "#EDE9FE", stroke: "#8B5CF6" },
+  Location:    { fill: "#CCFBF1", stroke: "#14B8A6" },
+  Metric:      { fill: "#FFEDD5", stroke: "#F97316" },
 };
+
+const FALLBACK = { fill: "#F1F5F9", stroke: "#94A3B8" };
 
 export default function EntityGraph({ entities }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -34,18 +36,16 @@ export default function EntityGraph({ entities }: Props) {
     svg.selectAll("*").remove();
 
     const width = svgRef.current.clientWidth || 600;
-    const height = 400;
+    const height = 420;
 
-    // Group entities by type and create nodes
     const nodes = entities.map((e, i) => ({
       id: i,
       name: e.name,
       type: e.type,
       confidence: e.confidence,
-      radius: 8 + e.confidence * 16, // size based on confidence
+      radius: 10 + e.confidence * 18,
     }));
 
-    // Create links between entities sharing source_url
     const links: { source: number; target: number }[] = [];
     for (let i = 0; i < entities.length; i++) {
       for (let j = i + 1; j < entities.length; j++) {
@@ -57,40 +57,30 @@ export default function EntityGraph({ entities }: Props) {
 
     const simulation = d3
       .forceSimulation(nodes as any)
-      .force(
-        "link",
-        d3
-          .forceLink(links)
-          .distance(60)
-          .strength(0.3)
-      )
-      .force("charge", d3.forceManyBody().strength(-200))
+      .force("link", d3.forceLink(links).distance(70).strength(0.25))
+      .force("charge", d3.forceManyBody().strength(-250))
       .force("center", d3.forceCenter(width / 2, height / 2))
-      .force("collision", d3.forceCollide().radius((d: any) => d.radius + 4));
+      .force("collision", d3.forceCollide().radius((d: any) => d.radius + 6));
 
     const g = svg.append("g");
 
-    // Draw links
-    const link = g
-      .selectAll("line")
+    // Links
+    g.selectAll("line")
       .data(links)
       .join("line")
-      .attr("stroke", "#555")
-      .attr("stroke-opacity", 0.3)
-      .attr("stroke-width", 1);
+      .attr("stroke", "#CBD5E1")
+      .attr("stroke-opacity", 0.5)
+      .attr("stroke-width", 1)
+      .attr("stroke-dasharray", "3,3");
 
-    // Draw nodes
+    // Nodes group
     const node = g
-      .selectAll("circle")
+      .selectAll("g")
       .data(nodes)
-      .join("circle")
-      .attr("r", (d) => d.radius)
-      .attr("fill", (d) => TYPE_COLORS[d.type] || "#95a5a6")
-      .attr("stroke", "#2c2c2c")
-      .attr("stroke-width", 1.5)
+      .join("g")
       .call(
         d3
-          .drag<SVGCircleElement, any>()
+          .drag<SVGGElement, any>()
           .on("start", (event, d) => {
             if (!event.active) simulation.alphaTarget(0.3).restart();
             d.fx = d.x;
@@ -107,27 +97,38 @@ export default function EntityGraph({ entities }: Props) {
           }) as any
       );
 
-    // Labels
-    const labels = g
-      .selectAll("text")
-      .data(nodes)
-      .join("text")
+    // Node circle
+    node
+      .append("circle")
+      .attr("r", (d) => d.radius)
+      .attr("fill", (d) => (TYPE_COLORS[d.type] || FALLBACK).fill)
+      .attr("stroke", (d) => (TYPE_COLORS[d.type] || FALLBACK).stroke)
+      .attr("stroke-width", 2)
+      .attr("stroke-opacity", 0.6);
+
+    // Node label
+    node
+      .append("text")
       .text((d) => d.name)
-      .attr("font-size", (d) => 8 + d.confidence * 4)
-      .attr("dx", (d) => d.radius + 4)
-      .attr("dy", 3)
-      .attr("fill", "#e0e0e0");
+      .attr("text-anchor", "middle")
+      .attr("dy", "0.3em")
+      .attr("font-size", (d) => Math.max(9, 8 + d.confidence * 5))
+      .attr("font-weight", "600")
+      .attr("font-family", "Plus Jakarta Sans, system-ui, sans-serif")
+      .attr("fill", "#334155")
+      .attr("pointer-events", "none");
+
+    // Title on hover
+    node.append("title").text((d) => `${d.name} [${d.type}] — confidence: ${(d.confidence * 100).toFixed(0)}%`);
 
     simulation.on("tick", () => {
-      link
+      g.selectAll<SVGGElement, any>("g").attr("transform", (d) => `translate(${d.x},${d.y})`);
+
+      g.selectAll<SVGLineElement, any>("line")
         .attr("x1", (d: any) => d.source.x)
         .attr("y1", (d: any) => d.source.y)
         .attr("x2", (d: any) => d.target.x)
         .attr("y2", (d: any) => d.target.y);
-
-      node.attr("cx", (d: any) => d.x).attr("cy", (d: any) => d.y);
-
-      labels.attr("x", (d: any) => d.x).attr("y", (d: any) => d.y);
     });
 
     return () => {
@@ -137,28 +138,32 @@ export default function EntityGraph({ entities }: Props) {
 
   if (entities.length === 0) return null;
 
-  // Legend
   const types = [...new Set(entities.map((e) => e.type))];
 
   return (
     <div>
       <svg
         ref={svgRef}
-        className="w-full border border-border rounded-lg bg-card"
-        style={{ minHeight: 400 }}
-        viewBox="0 0 600 400"
-        preserveAspectRatio="xMidYMid meet"
+        className="w-full rounded-lg bg-white"
+        style={{ minHeight: 420 }}
       />
-      <div className="flex flex-wrap gap-3 mt-3">
-        {types.map((type) => (
-          <div key={type} className="flex items-center gap-1.5 text-xs">
-            <span
-              className="w-3 h-3 rounded-full inline-block"
-              style={{ backgroundColor: TYPE_COLORS[type] || "#95a5a6" }}
-            />
-            {type}
-          </div>
-        ))}
+      {/* Legend */}
+      <div className="flex flex-wrap gap-2 mt-3">
+        {types.map((type) => {
+          const c = TYPE_COLORS[type] || FALLBACK;
+          return (
+            <div
+              key={type}
+              className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground bg-muted/50 px-2.5 py-1 rounded-full"
+            >
+              <span
+                className="w-2.5 h-2.5 rounded-full ring-1 ring-black/10"
+                style={{ backgroundColor: c.stroke }}
+              />
+              {type}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
