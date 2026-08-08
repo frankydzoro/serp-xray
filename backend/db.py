@@ -128,7 +128,7 @@ def get_analysis_status(analysis_id: str, timeout_minutes: int = 10) -> dict | N
     # Таймаут для застрявших анализов
     if d["status"] == "running":
         try:
-            created_at = datetime.fromisoformat(d["created_at"])
+            created_at = datetime.fromisoformat(d["created_at"]).replace(tzinfo=timezone.utc)
             elapsed = (datetime.now(timezone.utc) - created_at).total_seconds()
             if elapsed > timeout_minutes * 60:
                 conn.execute(
