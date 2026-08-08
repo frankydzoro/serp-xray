@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import Modal from "@/components/Modal";
 import EntityGraph from "@/components/EntityGraph";
-import GapTable from "@/components/GapTable";
+import GapCard from "@/components/GapCard";
 import ReportSkeleton from "@/components/ReportSkeleton";
 import { analyzeQuery, getAnalysisStatus } from "@/lib/api";
 
@@ -361,7 +361,7 @@ export default function HomePage() {
             <SectionHeading title="Content Gaps" badge={`${gapCount}`} />
             <Card className="shadow-card border-border/60">
               <CardContent className="p-4">
-                <GapTable gaps={report.gaps || []} />
+                <GapCard gaps={report.gaps || []} />
               </CardContent>
             </Card>
           </section>

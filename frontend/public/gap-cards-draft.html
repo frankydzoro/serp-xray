@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gap Cards — Draft</title>
+<style>
+  :root {
+    --bg: #F8FAFC;
+    --card: #FFFFFF;
+    --fg: #1E293B;
+    --muted: #64748B;
+    --muted-bg: #F1F5F9;
+    --border: #E2E8F0;
+    --primary: #2563EB;
+    --primary-bg: #EFF6FF;
+    --destructive: #DC2626;
+    --destructive-bg: #FEF2F2;
+    --warning: #F59E0B;
+    --warning-bg: #FFFBEB;
+    --success: #10B981;
+    --radius: 12px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    padding: 32px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page-header {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 24px;
+  }
+  .page-header h1 {
+    font-size: 12px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--muted);
+  }
+  .page-header .badge {
+    font-size: 11px; font-weight: 600;
+    background: var(--muted-bg); color: var(--muted);
+    padding: 2px 10px; border-radius: 999px;
+  }
+
+  /* ── Grid ──────────────────────────────── */
+  .gap-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
+    gap: 16px;
+  }
+  @media (max-width: 560px) {
+    .gap-grid { grid-template-columns: 1fr; }
+    body { padding: 16px; }
+  }
+
+  /* ── Card ──────────────────────────────── */
+  .gap-card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    display: flex;
+    transition: box-shadow 0.15s;
+  }
+  .gap-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  }
+
+  /* Left accent bar */
+  .gap-card__accent {
+    width: 4px; flex-shrink: 0;
+  }
+  .gap-card__accent--critical { background: var(--destructive); }
+  .gap-card__accent--high     { background: var(--warning); }
+  .gap-card__accent--medium   { background: var(--primary); }
+  .gap-card__accent--low      { background: var(--muted); }
+
+  .gap-card__body {
+    flex: 1; padding: 16px 20px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+
+  /* ── Header row ────────────────────────── */
+  .gap-card__header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 12px;
+  }
+  .gap-card__entity {
+    font-size: 15px; font-weight: 700; color: var(--fg);
+    line-height: 1.3;
+    word-break: break-word;
+  }
+  .gap-card__badges {
+    display: flex; gap: 6px; flex-shrink: 0;
+    align-items: center;
+  }
+  .gap-card__type {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.3px;
+    background: var(--muted-bg); color: var(--muted);
+    padding: 2px 8px; border-radius: 6px;
+  }
+  .gap-card__priority {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.3px;
+    padding: 2px 8px; border-radius: 6px;
+  }
+  .gap-card__priority--critical { background: var(--destructive-bg); color: var(--destructive); }
+  .gap-card__priority--high     { background: var(--warning-bg);   color: #B45309; }
+  .gap-card__priority--medium   { background: var(--primary-bg);  color: var(--primary); }
+  .gap-card__priority--low      { background: var(--muted-bg);    color: var(--muted); }
+
+  /* ── Description ───────────────────────── */
+  .gap-card__desc {
+    font-size: 13px; color: var(--muted); line-height: 1.6;
+  }
+
+  /* ── Recommendation ────────────────────── */
+  .gap-card__rec {
+    font-size: 13px; color: var(--fg); line-height: 1.5;
+    background: var(--primary-bg);
+    border-radius: 8px; padding: 10px 14px;
+    display: flex; gap: 8px; align-items: flex-start;
+  }
+  .gap-card__rec-icon { flex-shrink: 0; margin-top: 1px; }
+  .gap-card__rec-text { flex: 1; }
+
+  /* ── Found on URLs ─────────────────────── */
+  .gap-card__urls {}
+  .gap-card__urls-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.4px; color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .gap-card__urls-list {
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .gap-card__url-row {
+    font-size: 12px; color: var(--primary);
+    text-decoration: none;
+    display: flex; gap: 6px; align-items: baseline;
+    padding: 2px 0;
+    line-height: 1.5;
+  }
+  .gap-card__url-row:hover { text-decoration: underline; }
+  .gap-card__url-pos {
+    font-size: 10px; font-weight: 700; color: var(--muted);
+    min-width: 16px; flex-shrink: 0;
+  }
+  .gap-card__url-text {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>Content Gaps</h1>
+  <span class="badge">10</span>
+</div>
+
+<div class="gap-grid">
+
+  <!-- КАССОВЫЙ РАЗРЫВ · critical -->
+  <div class="gap-card">
+    <div class="gap-card__accent gap-card__accent--critical"></div>
+    <div class="gap-card__body">
+      <div class="gap-card__header">
+        <span class="gap-card__entity">Кассовый разрыв</span>
+        <div class="gap-card__badges">
+          <span class="gap-card__type">Concept</span>
+          <span class="gap-card__priority gap-card__priority--critical">Critical</span>
+        </div>
+      </div>
+      <p class="gap-card__desc">Ситуация, когда обязательств к оплате больше, чем поступлений на счёте; в закупках возникает из-за разрыва между исполнением контракта и оплатой от заказчика.</p>
+      <div class="gap-card__rec">
+        <svg class="gap-card__rec-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+        <span class="gap-card__rec-text">Раскройте определение кассового разрыва и его причины в контексте участия в закупках, чтобы читатель сразу понимал суть проблемы.</span>
+      </div>
+      <div class="gap-card__urls">
+        <p class="gap-card__urls-label">Found on 5 pages</p>
+        <div class="gap-card__urls-list">
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#1</span><span class="gap-card__url-text">Как выйти из кассового разрыва 9 способов от финдира</span></a>
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#1</span><span class="gap-card__url-text">Что такое кассовый разрыв в бизнесе: как предупредить…</span></a>
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#2</span><span class="gap-card__url-text">Как выйти из кассового разрыва: 9 советов</span></a>
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#2</span><span class="gap-card__url-text">Кассовый разрыв: что это в бизнесе, как его избежать…</span></a>
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#3</span><span class="gap-card__url-text">Кассовый разрыв: что это такое простыми словами…</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ДЕБИТОРСКАЯ ЗАДОЛЖЕННОСТЬ · critical -->
+  <div class="gap-card">
+    <div class="gap-card__accent gap-card__accent--critical"></div>
+    <div class="gap-card__body">
+      <div class="gap-card__header">
+        <span class="gap-card__entity">Дебиторская задолженность</span>
+        <div class="gap-card__badges">
+          <span class="gap-card__type">Concept</span>
+          <span class="gap-card__priority gap-card__priority--critical">Critical</span>
+        </div>
+      </div>
+      <p class="gap-card__desc">Сумма, которую контрагенты или заказчики должны бизнесу; при задержке оплаты по госконтрактам напрямую провоцирует кассовый разрыв.</p>
+      <div class="gap-card__rec">
+        <svg class="gap-card__rec-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+        <span class="gap-card__rec-text">Добавьте раздел о влиянии дебиторской задолженности на кассовые разрывы и методах работы с ней, например через факторинг или ужесточение условий оплаты.</span>
+      </div>
+      <div class="gap-card__urls">
+        <p class="gap-card__urls-label">Found on 6 pages</p>
+        <div class="gap-card__urls-list">
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#1</span><span class="gap-card__url-text">Как выйти из кассового разрыва 9 способов от финдира</span></a>
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#2</span><span class="gap-card__url-text">Как выйти из кассового разрыва: 9 советов</span></a>
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#4</span><span class="gap-card__url-text">Кассовый разрыв: что это такое, причины, как посчитать…</span></a>
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#5</span><span class="gap-card__url-text">Как выйти из кассового разрыва: 15 методов для бизнеса</span></a>
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#6</span><span class="gap-card__url-text">Что такое кассовые разрывы и как их избежать…</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ПЛАТЁЖНЫЙ КАЛЕНДАРЬ · critical -->
+  <div class="gap-card">
+    <div class="gap-card__accent gap-card__accent--critical"></div>
+    <div class="gap-card__body">
+      <div class="gap-card__header">
+        <span class="gap-card__entity">Платёжный календарь</span>
+        <div class="gap-card__badges">
+          <span class="gap-card__type">Concept</span>
+          <span class="gap-card__priority gap-card__priority--critical">Critical</span>
+        </div>
+      </div>
+      <p class="gap-card__desc">Оперативный график поступлений и выплат по дням/неделям, позволяющий заранее увидеть и предотвратить дефицит ликвидности.</p>
+      <div class="gap-card__rec">
+        <svg class="gap-card__rec-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+        <span class="gap-card__rec-text">Включите инструкцию по составлению платёжного календаря как инструмента прогнозирования и предотвращения кассовых разрывов для поставщиков по госконтрактам.</span>
+      </div>
+      <div class="gap-card__urls">
+        <p class="gap-card__urls-label">Found on 2 pages</p>
+        <div class="gap-card__urls-list">
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#1</span><span class="gap-card__url-text">Как выйти из кассового разрыва 9 способов от финдира</span></a>
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#4</span><span class="gap-card__url-text">Кассовый разрыв: что это такое, причины, как посчитать…</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- КРЕДИТОРСКАЯ ЗАДОЛЖЕННОСТЬ · critical -->
+  <div class="gap-card">
+    <div class="gap-card__accent gap-card__accent--critical"></div>
+    <div class="gap-card__body">
+      <div class="gap-card__header">
+        <span class="gap-card__entity">Кредиторская задолженность</span>
+        <div class="gap-card__badges">
+          <span class="gap-card__type">Concept</span>
+          <span class="gap-card__priority gap-card__priority--critical">Critical</span>
+        </div>
+      </div>
+      <p class="gap-card__desc">Обязательства компании перед поставщиками и подрядчиками; грамотное управление отсрочками помогает перекрыть временный разрыв в потоке.</p>
+      <div class="gap-card__rec">
+        <svg class="gap-card__rec-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+        <span class="gap-card__rec-text">Опишите, как управление кредиторской задолженностью (отсрочки, переговоры) помогает сгладить кассовые разрывы.</span>
+      </div>
+      <div class="gap-card__urls">
+        <p class="gap-card__urls-label">Found on 5 pages</p>
+        <div class="gap-card__urls-list">
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#1</span><span class="gap-card__url-text">Как выйти из кассового разрыва 9 способов от финдира</span></a>
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#2</span><span class="gap-card__url-text">Как выйти из кассового разрыва: 9 советов</span></a>
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#4</span><span class="gap-card__url-text">Кассовый разрыв: что это такое, причины, как посчитать…</span></a>
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#5</span><span class="gap-card__url-text">Как выйти из кассового разрыва: 15 методов для бизнеса</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ОВЕРДРАФТ · high -->
+  <div class="gap-card">
+    <div class="gap-card__accent gap-card__accent--high"></div>
+    <div class="gap-card__body">
+      <div class="gap-card__header">
+        <span class="gap-card__entity">Овердрафт</span>
+        <div class="gap-card__badges">
+          <span class="gap-card__type">Concept</span>
+          <span class="gap-card__priority gap-card__priority--high">High</span>
+        </div>
+      </div>
+      <p class="gap-card__desc">Краткосрочная кредитная линия к расчётному счёту для покрытия срочных платежей в момент кассового разрыва.</p>
+      <div class="gap-card__rec">
+        <svg class="gap-card__rec-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+        <span class="gap-card__rec-text">Объясните, как овердрафт может быть использован для оперативного покрытия кассового разрыва, и приведите условия его получения для бизнеса.</span>
+      </div>
+      <div class="gap-card__urls">
+        <p class="gap-card__urls-label">Found on 3 pages</p>
+        <div class="gap-card__urls-list">
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#4</span><span class="gap-card__url-text">Кассовый разрыв: что это такое, причины, как посчитать…</span></a>
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#5</span><span class="gap-card__url-text">Как выйти из кассового разрыва: 15 методов для бизнеса</span></a>
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#6</span><span class="gap-card__url-text">Что такое кассовые разрывы и как их избежать…</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ФАКТОРИНГ · high -->
+  <div class="gap-card">
+    <div class="gap-card__accent gap-card__accent--high"></div>
+    <div class="gap-card__body">
+      <div class="gap-card__header">
+        <span class="gap-card__entity">Факторинг</span>
+        <div class="gap-card__badges">
+          <span class="gap-card__type">Concept</span>
+          <span class="gap-card__priority gap-card__priority--high">High</span>
+        </div>
+      </div>
+      <p class="gap-card__desc">Передача права требования по дебиторской задолженности факторинговой компании за немедленное финансирование (до 90 % суммы).</p>
+      <div class="gap-card__rec">
+        <svg class="gap-card__rec-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+        <span class="gap-card__rec-text">Расскажите о факторинге как способе быстрого получения денег по исполненным контрактам, особенно актуальном для участников закупок.</span>
+      </div>
+      <div class="gap-card__urls">
+        <p class="gap-card__urls-label">Found on 3 pages</p>
+        <div class="gap-card__urls-list">
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#4</span><span class="gap-card__url-text">Кассовый разрыв: что это такое, причины, как посчитать…</span></a>
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#5</span><span class="gap-card__url-text">Как выйти из кассового разрыва: 15 методов для бизнеса</span></a>
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#6</span><span class="gap-card__url-text">Что такое кассовые разрывы и как их избежать…</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- БЮДЖЕТ ДОХОДОВ И РАСХОДОВ · high -->
+  <div class="gap-card">
+    <div class="gap-card__accent gap-card__accent--high"></div>
+    <div class="gap-card__body">
+      <div class="gap-card__header">
+        <span class="gap-card__entity">Бюджет доходов и расходов</span>
+        <div class="gap-card__badges">
+          <span class="gap-card__type">Concept</span>
+          <span class="gap-card__priority gap-card__priority--high">High</span>
+        </div>
+      </div>
+      <p class="gap-card__desc">Плановый документ, фиксирующий выручку и затраты по методу начисления; помогает выявить структурные причины дефицита.</p>
+      <div class="gap-card__rec">
+        <svg class="gap-card__rec-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+        <span class="gap-card__rec-text">Добавьте рекомендации по ведению бюджета доходов и расходов для контроля финансовых потоков и раннего выявления риска кассового разрыва.</span>
+      </div>
+      <div class="gap-card__urls">
+        <p class="gap-card__urls-label">Found on 2 pages</p>
+        <div class="gap-card__urls-list">
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#1</span><span class="gap-card__url-text">Как выйти из кассового разрыва 9 способов от финдира</span></a>
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#2</span><span class="gap-card__url-text">Как выйти из кассового разрыва: 9 советов</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- БДДС · high -->
+  <div class="gap-card">
+    <div class="gap-card__accent gap-card__accent--high"></div>
+    <div class="gap-card__body">
+      <div class="gap-card__header">
+        <span class="gap-card__entity">Бюджет движения денежных средств</span>
+        <div class="gap-card__badges">
+          <span class="gap-card__type">Concept</span>
+          <span class="gap-card__priority gap-card__priority--high">High</span>
+        </div>
+      </div>
+      <p class="gap-card__desc">План фактических поступлений и списаний денег (cash-flow); в отличие от БДР отражает реальную ликвидность по периодам.</p>
+      <div class="gap-card__rec">
+        <svg class="gap-card__rec-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+        <span class="gap-card__rec-text">Включите раздел о бюджете движения денежных средств (БДДС) и его отличии от БДР, с примерами для компаний-участников торгов.</span>
+      </div>
+      <div class="gap-card__urls">
+        <p class="gap-card__urls-label">Found on 1 page</p>
+        <div class="gap-card__urls-list">
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#2</span><span class="gap-card__url-text">Как выйти из кассового разрыва: 9 советов</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ЛИЗИНГ · medium -->
+  <div class="gap-card">
+    <div class="gap-card__accent gap-card__accent--medium"></div>
+    <div class="gap-card__body">
+      <div class="gap-card__header">
+        <span class="gap-card__entity">Лизинг</span>
+        <div class="gap-card__badges">
+          <span class="gap-card__type">Concept</span>
+          <span class="gap-card__priority gap-card__priority--medium">Medium</span>
+        </div>
+      </div>
+      <p class="gap-card__desc">Аренда оборудования/транспорта с постепенной оплатой вместо единовременной покупки; снижает пиковую нагрузку на денежный поток.</p>
+      <div class="gap-card__rec">
+        <svg class="gap-card__rec-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+        <span class="gap-card__rec-text">Упомяните лизинг как альтернативу крупным единовременным расходам, способную снизить нагрузку на денежный поток.</span>
+      </div>
+      <div class="gap-card__urls">
+        <p class="gap-card__urls-label">Found on 2 pages</p>
+        <div class="gap-card__urls-list">
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#1</span><span class="gap-card__url-text">Как выйти из кассового разрыва 9 способов от финдира</span></a>
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#5</span><span class="gap-card__url-text">Как выйти из кассового разрыва: 15 методов для бизнеса</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- КРЕДИТ · medium -->
+  <div class="gap-card">
+    <div class="gap-card__accent gap-card__accent--medium"></div>
+    <div class="gap-card__body">
+      <div class="gap-card__header">
+        <span class="gap-card__entity">Кредит</span>
+        <div class="gap-card__badges">
+          <span class="gap-card__type">Product</span>
+          <span class="gap-card__priority gap-card__priority--medium">Medium</span>
+        </div>
+      </div>
+      <p class="gap-card__desc">Заёмные средства банка на пополнение оборотного капитала; в контексте госзаказа сопряжён с риском при задержке оплаты от заказчика.</p>
+      <div class="gap-card__rec">
+        <svg class="gap-card__rec-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+        <span class="gap-card__rec-text">Рассмотрите кредит как инструмент покрытия кассового разрыва, указав на риски и условия для бизнеса, работающего с госзаказом.</span>
+      </div>
+      <div class="gap-card__urls">
+        <p class="gap-card__urls-label">Found on 2 pages</p>
+        <div class="gap-card__urls-list">
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#5</span><span class="gap-card__url-text">Как выйти из кассового разрыва: 15 методов для бизнеса</span></a>
+          <a class="gap-card__url-row" href="#"><span class="gap-card__url-pos">#6</span><span class="gap-card__url-text">Что такое кассовые разрывы и как их избежать…</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /.gap-grid -->
+
+</body>
+</html>
