@@ -5,8 +5,8 @@ from db import init_db
 
 
 app = FastAPI(
-    title="SERP-рентген",
-    description="Локальный инструмент конкурентного анализа поисковой выдачи через OpenRouter + SerpAPI",
+    title="SERP X-Ray",
+    description="Local competitive SERP analysis tool via OpenRouter + SerpAPI",
     version="0.1.0",
 )
 
@@ -30,4 +30,4 @@ async def startup():
 
 @app.get("/")
 async def root():
-    return {"service": "SERP-рентген", "version": "0.1.0", "docs": "/docs"}
+    return {"service": "SERP X-Ray", "version": "0.1.0", "docs": "/docs"}

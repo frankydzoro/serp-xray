@@ -36,7 +36,7 @@ async def analyze_gaps(
                     "found_in_top3": True,
                     "found_in_user_page": False,
                     "priority": "high",
-                    "recommendation": f"Добавить информацию о '{name}' на страницу",
+                    "recommendation": f"Add information about '{name}' to the page",
                 })
         # Сортируем: сначала критические (встречаются 2+ раза)
         name_counts = {}
@@ -94,7 +94,7 @@ async def analyze_gaps(
     for g in gaps:
         g.setdefault("entity_type", "Concept")
         g.setdefault("priority", "medium")
-        g.setdefault("recommendation", f"Добавить информацию о {g['entity']}")
+        g.setdefault("recommendation", f"Add information about {g['entity']}")
         g["found_in_top3"] = True
         g["found_in_user_page"] = g["entity"].lower() in user_names
 

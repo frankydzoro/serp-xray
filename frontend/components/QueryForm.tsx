@@ -12,9 +12,9 @@ interface Props {
 }
 
 const ENGINE_OPTIONS: { value: Engine; label: string; desc: string }[] = [
-  { value: "google", label: "🇬 Google", desc: "Только Google" },
-  { value: "yandex", label: "🇾 Яндекс", desc: "Только Яндекс" },
-  { value: "both", label: "🇬+🇾 Оба", desc: "Google + Яндекс" },
+  { value: "google", label: "🇬 Google", desc: "Google only" },
+  { value: "yandex", label: "🇾 Yandex", desc: "Yandex only" },
+  { value: "both", label: "🇬+🇾 Both", desc: "Google + Yandex" },
 ];
 
 export default function QueryForm({ onAnalyze, loading }: Props) {
@@ -31,11 +31,9 @@ export default function QueryForm({ onAnalyze, loading }: Props) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="text-sm font-medium mb-1 block">
-          Поисковый запрос
-        </label>
+        <label className="text-sm font-medium mb-1 block">Search query</label>
         <Input
-          placeholder="например: как выбрать CRM для малого бизнеса"
+          placeholder="e.g. how to choose a CRM for small business"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           disabled={loading}
@@ -45,9 +43,7 @@ export default function QueryForm({ onAnalyze, loading }: Props) {
 
       <div className="flex gap-4">
         <div className="flex-1">
-          <label className="text-sm font-medium mb-1 block">
-            Ваша страница (опционально)
-          </label>
+          <label className="text-sm font-medium mb-1 block">Your page (optional)</label>
           <Input
             placeholder="https://example.com/my-page"
             value={url}
@@ -55,14 +51,12 @@ export default function QueryForm({ onAnalyze, loading }: Props) {
             disabled={loading}
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Если указать URL — сравним вашу страницу с топ-3 выдачи
+            If provided — compares your page to the top-3 results
           </p>
         </div>
 
         <div className="w-48">
-          <label className="text-sm font-medium mb-1 block">
-            Поисковик
-          </label>
+          <label className="text-sm font-medium mb-1 block">Search engine</label>
           <div className="flex gap-1">
             {ENGINE_OPTIONS.map((opt) => (
               <button
@@ -85,7 +79,7 @@ export default function QueryForm({ onAnalyze, loading }: Props) {
       </div>
 
       <Button type="submit" disabled={loading || !query.trim()} className="w-full">
-        {loading ? "⏳ Анализируем..." : "🔍 Анализировать"}
+        {loading ? "⏳ Analyzing..." : "🔍 Analyze"}
       </Button>
     </form>
   );
