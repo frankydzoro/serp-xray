@@ -79,3 +79,22 @@ class ModelSetting(BaseModel):
 class PromptsSetting(BaseModel):
     entity_prompt: str
     gap_prompt: str
+
+
+class RewritePromptsSetting(BaseModel):
+    system_prompt: str
+    user_prompt: str
+
+
+class RewriteModelSetting(BaseModel):
+    model: str
+
+
+class RewriteRequest(BaseModel):
+    article_text: str
+    gaps: list[dict]
+    model: Optional[str] = None
+
+
+class RewriteResponse(BaseModel):
+    rewritten_text: str

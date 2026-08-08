@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import EntityGraph from "@/components/EntityGraph";
 import GapCard from "@/components/GapCard";
+import RewriteModal from "@/components/RewriteModal";
 import { getReport } from "@/lib/api";
 import { downloadMarkdown, downloadPDF } from "@/lib/export";
 
@@ -218,8 +219,14 @@ export default function ReportPage() {
       <section>
         <SectionHeading title="Content Gaps" badge={`${gapCount}`} />
         <Card className="shadow-card border-border/60">
-          <CardContent className="p-4">
+          <CardContent className="p-4 space-y-3">
             <GapCard gaps={data.gaps || []} />
+            {data.gaps?.length > 0 && data.user_page_text && (
+              <RewriteModal
+                articleText={data.user_page_text}
+                gaps={data.gaps}
+              />
+            )}
           </CardContent>
         </Card>
       </section>

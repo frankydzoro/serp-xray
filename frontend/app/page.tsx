@@ -10,6 +10,7 @@ import Modal from "@/components/Modal";
 import EntityGraph from "@/components/EntityGraph";
 import GapCard from "@/components/GapCard";
 import ReportSkeleton from "@/components/ReportSkeleton";
+import RewriteModal from "@/components/RewriteModal";
 import { analyzeQuery, getAnalysisStatus } from "@/lib/api";
 
 /* ── Types ───────────────────────────────── */
@@ -411,8 +412,14 @@ export default function HomePage() {
           <section>
             <SectionHeading title="Content Gaps" badge={`${gapCount}`} />
             <Card className="shadow-card border-border/60">
-              <CardContent className="p-4">
+              <CardContent className="p-4 space-y-3">
                 <GapCard gaps={report.gaps || []} />
+                {report.gaps?.length > 0 && report.user_page_text && (
+                  <RewriteModal
+                    articleText={report.user_page_text}
+                    gaps={report.gaps}
+                  />
+                )}
               </CardContent>
             </Card>
           </section>

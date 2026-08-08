@@ -150,3 +150,74 @@ export async function fetchModels(params?: {
   }
   return resp.json();
 }
+
+
+/* ── Rewrite ──────────────────────────── */
+
+export interface RewritePromptsData {
+  system_prompt: string;
+  user_prompt: string;
+}
+
+export interface RewriteModelData {
+  model: string;
+}
+
+export interface RewriteResponse {
+  rewritten_text: string;
+}
+
+export async function getRewriteModel(): Promise<RewriteModelData> {
+  const resp = await fetch(`${API_BASE}/api/admin/rewrite-model`);
+  return resp.json();
+}
+
+export async function updateRewriteModel(model: string): Promise<RewriteModelData> {
+  const resp = await fetch(`${API_BASE}/api/admin/rewrite-model`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model }),
+  });
+  return resp.json();
+}
+
+export async function getRewritePrompts(): Promise<RewritePromptsData> {
+  const resp = await fetch(`${API_BASE}/api/admin/rewrite-prompts`);
+  return resp.json();
+}
+
+export async function updateRewritePrompts(
+  system_prompt: string,
+  user_prompt: string
+): Promise<RewritePromptsData> {
+  const resp = await fetch(`${API_BASE}/api/admin/rewrite-prompts`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ system_prompt, user_prompt }),
+  });
+  return resp.json();
+}
+
+export async function resetRewritePrompts(): Promise<RewritePromptsData> {
+  const resp = await fetch(`${API_BASE}/api/admin/rewrite-prompts/reset`, {
+    method: "POST",
+  });
+  return resp.json();
+}
+
+export async function rewriteArticle(
+  article_text: string,
+  gaps: Array<Record<string, unknown>>,
+  model?: string
+): Promise<RewriteResponse> {
+  const resp = await fetch(`${API_BASE}/api/rewrite`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ article_text, gaps, model }),
+  });
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error(err);
+  }
+  return resp.json();
+}

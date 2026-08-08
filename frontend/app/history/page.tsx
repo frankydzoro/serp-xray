@@ -6,7 +6,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { getHistory } from "@/lib/api";
+import RewriteModal from "@/components/RewriteModal";
+import { getHistory, getReport } from "@/lib/api";
 import { downloadMarkdown, downloadPDF } from "@/lib/export";
 
 interface HistoryItem {
@@ -82,6 +83,8 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [rewriteData, setRewriteData] = useState<{ articleText: string; gaps: any[] } | null>(null);
+  const [rewriteLoadingId, setRewriteLoadingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
   const loadHistory = useCallback(async () => {
@@ -170,6 +173,20 @@ export default function HistoryPage() {
       await new Promise((r) => setTimeout(r, 300));
     }
     setActionLoading(null);
+  };
+
+  const handleRewrite = async (itemId: string) => {
+    setRewriteLoadingId(itemId);
+    try {
+      const report = await getReport(itemId);
+      const data = report.result_json || {};
+      if (data.user_page_text && data.gaps?.length > 0) {
+        setRewriteData({ articleText: data.user_page_text, gaps: data.gaps });
+      }
+    } catch {
+      // silently fail, user can retry
+    }
+    setRewriteLoadingId(null);
   };
 
   if (loading)
@@ -342,6 +359,20 @@ export default function HistoryPage() {
                   >
                     {item.status === "running" ? "View" : "Open"}
                   </Link>
+                {item.status === "completed" && item.gaps_count > 0 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs text-muted-foreground hover:text-primary"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRewrite(item.id);
+                    }}
+                    disabled={rewriteLoadingId === item.id}
+                  >
+                    {rewriteLoadingId === item.id ? "..." : "Rewrite"}
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="ghost"
@@ -359,6 +390,15 @@ export default function HistoryPage() {
           </Card>
         ))}
       </div>
+
+      {/* Rewrite modal (lazy-loaded from history) */}
+      {rewriteData && (
+        <RewriteModal
+          articleText={rewriteData.articleText}
+          gaps={rewriteData.gaps}
+          onComplete={() => setRewriteData(null)}
+        />
+      )}
     </div>
   );
 }
