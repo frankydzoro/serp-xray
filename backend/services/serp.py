@@ -27,6 +27,7 @@ async def _fetch_google(query: str, num: int) -> list[dict]:
         "engine": "google",
         "gl": "ru",
         "hl": "ru",
+        "fields": "organic_results(link,title,snippet,position),search_metadata(status),error",
     }
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get("https://serpapi.com/search", params=params)
@@ -56,6 +57,7 @@ async def _fetch_yandex(query: str, num: int) -> list[dict]:
         "engine": "yandex",
         "yandex_domain": "yandex.ru",
         "lang": "ru",
+        "fields": "organic_results(link,title,snippet,position),search_metadata(status),error",
     }
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get("https://serpapi.com/search", params=params)

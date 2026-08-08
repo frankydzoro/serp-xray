@@ -43,6 +43,7 @@ async def _run_pipeline(
     """Фоновый pipeline: выполняет анализ и обновляет статус в БД."""
     try:
         # Stage: searching
+        logger.info("[%s] Stage: searching (query=%r, engine=%r)", analysis_id, query, engine)
         update_analysis_status(analysis_id, "searching")
         serp_results = await fetch_top20(query, engine)
         if not serp_results:
@@ -50,6 +51,9 @@ async def _run_pipeline(
             return
 
         # Stage: fetching
+        # Для 'both' берём 20 страниц (10 Google + 10 Yandex), иначе 10
+        page_limit = 20 if engine == "both" else 10
+        logger.info("[%s] Stage: fetching (%d URLs)", analysis_id, page_limit)
         update_analysis_status(analysis_id, "fetching")
 
         async def fetch_text(r):
@@ -65,8 +69,6 @@ async def _run_pipeline(
                     "position": r["position"], "engine": r.get("engine", engine),
                 }
 
-        # Для 'both' берём 20 страниц (10 Google + 10 Yandex), иначе 10
-        page_limit = 20 if engine == "both" else 10
         competitors = serp_results[:page_limit]
         pages = await asyncio.gather(*(fetch_text(r) for r in competitors))
 
@@ -83,6 +85,7 @@ async def _run_pipeline(
         ]
 
         # Stage: extracting
+        logger.info("[%s] Stage: extracting (%d pages)", analysis_id, len(pages))
         update_analysis_status(analysis_id, "extracting")
 
         async def extract_for_page(p):
@@ -158,10 +161,13 @@ async def _run_pipeline(
                 pass
 
         # Stage: analyzing gaps
+        logger.info("[%s] Stage: analyzing gaps (user_entities=%d, competitor_entities=%d)",
+                     analysis_id, len(user_entities), len(competitor_entities))
         update_analysis_status(analysis_id, "analyzing")
         gaps = await analyze_gaps(user_entities, competitor_entities, model, query)
 
         # Stage: building report
+        logger.info("[%s] Stage: building report (%d gaps)", analysis_id, len(gaps))
         update_analysis_status(analysis_id, "building")
 
         unique_entity_names = {e["name"].lower() for e in all_entities}
@@ -202,6 +208,7 @@ async def _run_pipeline(
 
         complete_analysis(analysis_id, report.model_dump())
     except Exception as e:
+        logger.exception("[%s] Pipeline failed: %s", analysis_id, e)
         fail_analysis(analysis_id, str(e))
 
 
