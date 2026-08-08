@@ -24,7 +24,6 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState("");
-  // Entities collected from extractor for graph
   const [allEntities, setAllEntities] = useState<any[]>([]);
 
   const handleAnalyze = async (query: string, url?: string, engine?: string) => {
@@ -37,13 +36,11 @@ export default function HomePage() {
       const data = await analyzeQuery(query, url, engine);
       setReport(data);
 
-      // Fetch full report for entities
       const full = await fetch(
         `http://localhost:8000/api/history/${data.id}`
       ).then((r) => r.json());
 
       if (full?.result_json?.gaps) {
-        // Collect entities from gaps for graph
         const entities = full.result_json.gaps.map((g: any) => ({
           name: g.entity,
           type: g.entity_type || "Concept",
@@ -53,7 +50,7 @@ export default function HomePage() {
         setAllEntities(entities);
       }
     } catch (err: any) {
-      setError(err.message || "Ошибка анализа");
+      setError(err.message || "Analysis error");
     } finally {
       setLoading(false);
     }
@@ -63,10 +60,10 @@ export default function HomePage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>SERP-рентген — конкурентный анализ</CardTitle>
+          <CardTitle>SERP X-Ray — competitive analysis</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Введите поисковый запрос, чтобы увидеть какие сущности есть в топ-20
-            выдачи и какие отсутствуют на вашей странице
+            Enter a search query to see which entities appear in the top-20
+            results and which are missing from your page
           </p>
         </CardHeader>
         <CardContent>
@@ -85,29 +82,29 @@ export default function HomePage() {
       {report && !loading && (
         <Tabs defaultValue="overview">
           <TabsList>
-            <TabsTrigger value="overview">📊 Обзор</TabsTrigger>
-            <TabsTrigger value="graph">🕸 Граф сущностей</TabsTrigger>
-            <TabsTrigger value="gaps">🕳 Разрывы ({report.gaps.length})</TabsTrigger>
-            <TabsTrigger value="checklist">✅ Чек-лист ({report.checklist.length})</TabsTrigger>
+            <TabsTrigger value="overview">📊 Overview</TabsTrigger>
+            <TabsTrigger value="graph">🕸 Entity Graph</TabsTrigger>
+            <TabsTrigger value="gaps">🕳 Gaps ({report.gaps.length})</TabsTrigger>
+            <TabsTrigger value="checklist">✅ Checklist ({report.checklist.length})</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">
             <div className="grid grid-cols-3 gap-4">
               <Card>
                 <CardHeader className="pb-2">
-                  <p className="text-xs text-muted-foreground">Сущностей найдено</p>
+                  <p className="text-xs text-muted-foreground">Entities found</p>
                   <p className="text-3xl font-bold">{report.entities_found}</p>
                 </CardHeader>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <p className="text-xs text-muted-foreground">Разрывов</p>
+                  <p className="text-xs text-muted-foreground">Gaps</p>
                   <p className="text-3xl font-bold text-red-400">{report.gaps.length}</p>
                 </CardHeader>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <p className="text-xs text-muted-foreground">Покрытие топ-3</p>
+                  <p className="text-xs text-muted-foreground">Top-3 coverage</p>
                   <p className="text-3xl font-bold">{report.top3_entity_coverage}%</p>
                 </CardHeader>
               </Card>
@@ -116,7 +113,7 @@ export default function HomePage() {
             {report.user_entity_coverage > 0 && (
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-sm">Покрытие вашей страницы</CardTitle>
+                  <CardTitle className="text-sm">Your page coverage</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="bg-muted rounded-full h-3 overflow-hidden">
@@ -126,7 +123,7 @@ export default function HomePage() {
                     />
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {report.user_entity_coverage}% сущностей из топа покрыто на вашей странице
+                    {report.user_entity_coverage}% of top entities are covered on your page
                   </p>
                 </CardContent>
               </Card>
@@ -135,36 +132,22 @@ export default function HomePage() {
 
           <TabsContent value="graph">
             <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Граф сущностей</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <EntityGraph entities={allEntities} />
-              </CardContent>
+              <CardHeader><CardTitle className="text-sm">Entity Graph</CardTitle></CardHeader>
+              <CardContent><EntityGraph entities={allEntities} /></CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="gaps">
             <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">
-                  Разрывы ({report.gaps.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <GapTable gaps={report.gaps} />
-              </CardContent>
+              <CardHeader><CardTitle className="text-sm">Gaps ({report.gaps.length})</CardTitle></CardHeader>
+              <CardContent><GapTable gaps={report.gaps} /></CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="checklist">
             <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Чек-лист действий</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Checklist items={report.checklist} />
-              </CardContent>
+              <CardHeader><CardTitle className="text-sm">Action Checklist</CardTitle></CardHeader>
+              <CardContent><Checklist items={report.checklist} /></CardContent>
             </Card>
           </TabsContent>
         </Tabs>

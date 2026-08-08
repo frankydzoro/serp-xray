@@ -22,18 +22,11 @@ const PRIORITY_COLORS: Record<string, "destructive" | "default" | "secondary" | 
   low: "secondary",
 };
 
-const PRIORITY_LABELS: Record<string, string> = {
-  critical: "🔴 Критический",
-  high: "🟠 Высокий",
-  medium: "🟡 Средний",
-  low: "⚪ Низкий",
-};
-
 export default function GapTable({ gaps }: Props) {
   if (gaps.length === 0) {
     return (
       <div className="text-center p-6 text-muted-foreground">
-        Разрывов не обнаружено — страница покрывает все ключевые сущности
+        No gaps found — your page covers all key entities
       </div>
     );
   }
@@ -43,12 +36,12 @@ export default function GapTable({ gaps }: Props) {
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border">
-            <th className="text-left p-2">Сущность</th>
-            <th className="text-left p-2">Тип</th>
-            <th className="text-left p-2">Приоритет</th>
-            <th className="text-left p-2">Рекомендация</th>
-            <th className="text-center p-2">В топ-3</th>
-            <th className="text-center p-2">У вас</th>
+            <th className="text-left p-2">Entity</th>
+            <th className="text-left p-2">Type</th>
+            <th className="text-left p-2">Priority</th>
+            <th className="text-left p-2">Recommendation</th>
+            <th className="text-center p-2">In top-3</th>
+            <th className="text-center p-2">Your page</th>
           </tr>
         </thead>
         <tbody>

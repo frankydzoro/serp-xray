@@ -20,22 +20,22 @@ async def get_analysis_detail(analysis_id: str):
     """Возвращает полный отчёт анализа по ID."""
     result = get_analysis(analysis_id)
     if not result:
-        raise HTTPException(status_code=404, detail="Анализ не найден")
+        raise HTTPException(status_code=404, detail="Analysis not found")
     return result
 
 
 @router.delete("/history/{analysis_id}")
 async def delete_analysis_endpoint(analysis_id: str):
-    """Удаляет один анализ по ID."""
+    """Delete a single analysis by ID."""
     if not delete_analysis(analysis_id):
-        raise HTTPException(status_code=404, detail="Анализ не найден")
+        raise HTTPException(status_code=404, detail="Analysis not found")
     return {"deleted": True, "id": analysis_id}
 
 
 @router.post("/history/bulk-delete")
 async def bulk_delete(req: BulkDeleteRequest):
-    """Массовое удаление анализов."""
+    """Bulk delete analyses."""
     if not req.ids:
-        raise HTTPException(status_code=400, detail="Пустой список ID")
+        raise HTTPException(status_code=400, detail="Empty ID list")
     count = delete_analyses_bulk(req.ids)
     return {"deleted": count, "ids": req.ids}

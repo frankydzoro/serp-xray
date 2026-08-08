@@ -1,34 +1,34 @@
-ENTITY_EXTRACTION_PROMPT = """Ты — анализатор SEO-сущностей. Проанализируй текст страницы и извлеки все сущности, релевантные для Knowledge Graph. Для каждой сущности укажи: name, type (одно из: Person, Organization, Concept, Product, Event, Location, Metric), confidence (0-1).
+ENTITY_EXTRACTION_PROMPT = """You are an SEO entity analyzer. Analyze the page text and extract all entities relevant for Knowledge Graph. For each entity, specify: name, type (one of: Person, Organization, Concept, Product, Event, Location, Metric), confidence (0-1).
 
-Верни СТРОГИЙ JSON в формате:
+Return STRICT JSON in this format:
 {{"entities": [{{"name": "...", "type": "...", "confidence": 0.X}}]}}
 
-Правила:
-- Извлекай только значимые сущности (имена, бренды, продукты, технологии, локации)
-- Не извлекай common words
-- Указывай confidence: 1.0 = точно сущность, 0.5 = возможно
-- Максимум 15 сущностей
+Rules:
+- Extract only meaningful entities (names, brands, products, technologies, locations)
+- Do not extract common words
+- Confidence: 1.0 = definitely an entity, 0.5 = possibly
+- Maximum 15 entities
 
-Текст страницы:
+Page text:
 {page_text}"""
 
-GAP_ANALYSIS_PROMPT = """Ты — SEO-диагност. Сравни сущности, найденные на странице пользователя, с сущностями из топ-3 выдачи. Найди КОНКРЕТНЫЕ разрывы.
+GAP_ANALYSIS_PROMPT = """You are an SEO diagnostician. Compare the entities found on the user's page with entities from the top-3 search results. Find SPECIFIC gaps.
 
-Сущности пользователя:
+User page entities:
 {user_entities}
 
-Сущности топ-3 выдачи:
+Top-3 entities:
 {top3_entities}
 
-Для каждого разрыва укажи:
-- entity: название сущности
-- entity_type: тип (Person/Organization/Concept/Product/Event/Location/Metric)
-- priority: critical (отсутствует критическая сущность, без которой страница неполна) / high / medium / low
-- recommendation: конкретное действие на русском (1 предложение)
+For each gap, specify:
+- entity: entity name
+- entity_type: type (Person/Organization/Concept/Product/Event/Location/Metric)
+- priority: critical (missing a critical entity without which the page is incomplete) / high / medium / low
+- recommendation: a specific action (1 sentence)
 
-Верни СТРОГИЙ JSON в формате:
+Return STRICT JSON in this format:
 {{"gaps": [{{"entity": "...", "entity_type": "...", "priority": "...", "recommendation": "..."}}]}}
 
-ВАЖНО: если разрывов нет, верни {{"gaps": []}}. Не придумывай несуществующие разрывы.
-Учитывай: если сущность из топ-3 отсутствует у пользователя, это разрыв.
-Приоритет critical — только если сущность встречается в 2+ страницах топ-3 и напрямую связана с темой запроса."""
+IMPORTANT: if there are no gaps, return {{"gaps": []}}. Do not invent non-existent gaps.
+Note: if an entity from the top-3 is absent on the user's page, it is a gap.
+Priority critical — only if the entity appears in 2+ top-3 pages and is directly related to the query topic."""

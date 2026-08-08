@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import GapTable from "@/components/GapTable";
@@ -17,17 +17,15 @@ export default function ReportPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getReport(id)
-      .then(setReport)
-      .finally(() => setLoading(false));
+    getReport(id).then(setReport).finally(() => setLoading(false));
   }, [id]);
 
-  if (loading) return <div className="p-8 text-center">Загрузка...</div>;
-  if (!report) return <div className="p-8 text-center text-red-400">Отчёт не найден</div>;
+  if (loading) return <div className="p-8 text-center">Loading...</div>;
+  if (!report) return <div className="p-8 text-center text-red-400">Report not found</div>;
 
   const data = report.result_json;
 
-  const handleDownload = (format: "md" | "pdf") => {
+  const handleDownload = async (format: "md" | "pdf") => {
     const reportData = {
       id,
       query: data.query,
@@ -40,75 +38,36 @@ export default function ReportPage() {
     };
 
     if (format === "md") downloadMarkdown(reportData);
-    else downloadPDF(reportData);
+    else await downloadPDF(reportData);
   };
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-4">
-          <Link href="/history" className="text-sm text-muted-foreground hover:text-primary">
-            ← История
-          </Link>
+          <Link href="/history" className="text-sm text-muted-foreground hover:text-primary">← History</Link>
           <h1 className="text-xl font-bold truncate max-w-lg">{data.query}</h1>
         </div>
-
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={() => handleDownload("md")}>
-            📄 Скачать MD
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => handleDownload("pdf")}>
-            📕 Скачать PDF
-          </Button>
+          <Button size="sm" variant="outline" onClick={async () => handleDownload("md")}>📄 Download MD</Button>
+          <Button size="sm" variant="outline" onClick={async () => handleDownload("pdf")}>📕 Download PDF</Button>
         </div>
       </div>
 
       <div className="grid grid-cols-4 gap-3">
-        <Card>
-          <CardHeader className="p-3 pb-1">
-            <p className="text-xs text-muted-foreground">Сущностей</p>
-            <p className="text-xl font-bold">{data.entities_found}</p>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="p-3 pb-1">
-            <p className="text-xs text-muted-foreground">Разрывов</p>
-            <p className="text-xl font-bold text-red-400">{data.gaps?.length || 0}</p>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="p-3 pb-1">
-            <p className="text-xs text-muted-foreground">Покрытие топ-3</p>
-            <p className="text-xl font-bold">{data.top3_entity_coverage || 0}%</p>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="p-3 pb-1">
-            <p className="text-xs text-muted-foreground">Покрытие страницы</p>
-            <p className="text-xl font-bold">{data.user_entity_coverage || 0}%</p>
-          </CardHeader>
-        </Card>
+        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Entities</p><p className="text-xl font-bold">{data.entities_found}</p></CardContent></Card>
+        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Gaps</p><p className="text-xl font-bold text-red-400">{data.gaps?.length || 0}</p></CardContent></Card>
+        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Top-3 coverage</p><p className="text-xl font-bold">{data.top3_entity_coverage || 0}%</p></CardContent></Card>
+        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Your page</p><p className="text-xl font-bold">{data.user_entity_coverage || 0}%</p></CardContent></Card>
       </div>
 
       <Tabs defaultValue="gaps">
         <TabsList>
-          <TabsTrigger value="gaps">🕳 Разрывы</TabsTrigger>
-          <TabsTrigger value="checklist">✅ Чек-лист</TabsTrigger>
+          <TabsTrigger value="gaps">🕳 Gaps</TabsTrigger>
+          <TabsTrigger value="checklist">✅ Checklist</TabsTrigger>
         </TabsList>
-        <TabsContent value="gaps">
-          <Card>
-            <CardContent className="pt-4">
-              <GapTable gaps={data.gaps || []} />
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="checklist">
-          <Card>
-            <CardContent className="pt-4">
-              <Checklist items={data.checklist || []} />
-            </CardContent>
-          </Card>
-        </TabsContent>
+        <TabsContent value="gaps"><Card><CardContent className="pt-4"><GapTable gaps={data.gaps || []} /></CardContent></Card></TabsContent>
+        <TabsContent value="checklist"><Card><CardContent className="pt-4"><Checklist items={data.checklist || []} /></CardContent></Card></TabsContent>
       </Tabs>
     </div>
   );

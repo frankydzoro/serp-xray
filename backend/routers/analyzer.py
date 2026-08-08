@@ -40,7 +40,7 @@ async def analyze(req: AnalyzeRequest):
         raise HTTPException(status_code=502, detail=f"SerpAPI error: {str(e)}")
 
     if not serp_results:
-        raise HTTPException(status_code=404, detail="Нет результатов по запросу")
+        raise HTTPException(status_code=404, detail="No results found for query")
 
     # 2. Загружаем текст каждой страницы (топ-10 для скорости, остальные — сниппеты)
     async def fetch_text(r):
@@ -131,32 +131,31 @@ async def analyze(req: AnalyzeRequest):
 
 
 def _generate_checklist(gaps: list[dict], has_user_page: bool) -> list[str]:
-    """Генерирует чек-лист на основе разрывов."""
+    """Generates a checklist based on gaps."""
     items = []
 
-    # Группируем по приоритетам
     critical = [g for g in gaps if g.get("priority") == "critical"]
     high = [g for g in gaps if g.get("priority") == "high"]
 
     if critical:
-        items.append(f"🔴 КРИТИЧЕСКИЕ РАЗРЫВЫ ({len(critical)}):")
+        items.append(f"🔴 CRITICAL GAPS ({len(critical)}):")
         for g in critical[:5]:
-            rec = g.get("recommendation") or f"Добавить: {g['entity']}"
+            rec = g.get("recommendation") or f"Add: {g['entity']}"
             items.append(f"  • {rec}")
 
     if high:
-        items.append(f"🟠 ВАЖНЫЕ РАЗРЫВЫ ({len(high)}):")
+        items.append(f"🟠 HIGH PRIORITY GAPS ({len(high)}):")
         for g in high[:5]:
-            rec = g.get("recommendation") or f"Добавить: {g['entity']}"
+            rec = g.get("recommendation") or f"Add: {g['entity']}"
             items.append(f"  • {rec}")
 
     if not critical and not high:
-        items.append("✅ Критических разрывов не обнаружено")
+        items.append("✅ No critical gaps found")
 
     if has_user_page:
-        items.append("📝 Сравните вашу страницу с топ-3 по этим сущностям и добавьте недостающие")
+        items.append("📝 Compare your page to the top-3 by these entities and fill the gaps")
 
-    items.append("🔍 Проверьте структуру заголовков (H1-H3) на наличие ключевых сущностей")
-    items.append("📊 Убедитесь, что основные сущности встречаются в first fold страницы")
+    items.append("🔍 Verify heading structure (H1-H3) for key entity presence")
+    items.append("📊 Ensure main entities appear in the first fold of the page")
 
     return items

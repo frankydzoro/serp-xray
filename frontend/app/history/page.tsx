@@ -59,7 +59,7 @@ export default function HistoryPage() {
   };
 
   const bulkDelete = async () => {
-    if (selected.size === 0 || !confirm(`Удалить ${selected.size} записей?`)) return;
+    if (selected.size === 0 || !confirm(`Delete ${selected.size} records?`)) return;
     const ids = [...selected];
     await fetch(`${API_BASE}/api/history/bulk-delete`, {
       method: "POST",
@@ -82,76 +82,50 @@ export default function HistoryPage() {
       if (format === "md") {
         downloadMarkdown({ id, query: data.query, ...data });
       } else {
-        downloadPDF({ id, query: data.query, ...data });
+        await downloadPDF({ id, query: data.query, ...data });
       }
-      // Small delay between multiple downloads
       await new Promise((r) => setTimeout(r, 300));
     }
     setActionLoading(null);
   };
 
-  if (loading) return <div className="p-8 text-center">Загрузка...</div>;
+  if (loading) return <div className="p-8 text-center">Loading...</div>;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">📜 История анализов</h1>
-        <span className="text-sm text-muted-foreground">{items.length} записей</span>
+        <h1 className="text-2xl font-bold">📜 Analysis History</h1>
+        <span className="text-sm text-muted-foreground">{items.length} records</span>
       </div>
 
-      {/* Bulk actions bar */}
       {items.length > 0 && (
         <Card className="border-border/50 bg-muted/20">
           <CardContent className="p-3 flex items-center gap-3 flex-wrap">
             <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={selected.size === items.length && items.length > 0}
-                onChange={toggleAll}
-                className="rounded"
-              />
-              Все
+              <input type="checkbox" checked={selected.size === items.length && items.length > 0} onChange={toggleAll} className="rounded" />
+              All
             </label>
             <span className="text-xs text-muted-foreground">
-              {selected.size > 0 ? `Выбрано: ${selected.size}` : "Выберите записи"}
+              {selected.size > 0 ? `Selected: ${selected.size}` : "Select records"}
             </span>
             <div className="flex-1" />
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={selected.size === 0}
-              onClick={() => bulkExport("md")}
-            >
-              📄 Скачать MD
+            <Button size="sm" variant="outline" disabled={selected.size === 0} onClick={() => bulkExport("md")}>
+              📄 Download MD
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={selected.size === 0}
-              onClick={() => bulkExport("pdf")}
-            >
-              📕 Скачать PDF
+            <Button size="sm" variant="outline" disabled={selected.size === 0} onClick={() => bulkExport("pdf")}>
+              📕 Download PDF
             </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={selected.size === 0}
-              onClick={bulkDelete}
-            >
-              🗑 Удалить ({selected.size})
+            <Button size="sm" variant="destructive" disabled={selected.size === 0} onClick={bulkDelete}>
+              🗑 Delete ({selected.size})
             </Button>
           </CardContent>
         </Card>
       )}
 
-      {/* Table */}
       {items.length === 0 && (
         <Card>
           <CardContent className="p-6 text-center text-muted-foreground">
-            Пока нет ни одного анализа.{" "}
-            <Link href="/" className="text-primary hover:underline">
-              Запустите первый
-            </Link>
+            No analyses yet. <Link href="/" className="text-primary hover:underline">Run your first one</Link>
           </CardContent>
         </Card>
       )}
@@ -161,55 +135,34 @@ export default function HistoryPage() {
           <thead>
             <tr className="border-b border-border">
               <th className="p-3 w-8"></th>
-              <th className="text-left p-3">Дата</th>
-              <th className="text-left p-3">Запрос</th>
-              <th className="text-center p-3">Сущности</th>
-              <th className="text-center p-3">Разрывы</th>
-              <th className="text-left p-3">Модель</th>
-              <th className="text-right p-3">Действия</th>
+              <th className="text-left p-3">Date</th>
+              <th className="text-left p-3">Query</th>
+              <th className="text-center p-3">Entities</th>
+              <th className="text-center p-3">Gaps</th>
+              <th className="text-left p-3">Model</th>
+              <th className="text-right p-3">Actions</th>
             </tr>
           </thead>
           <tbody>
             {items.map((item) => (
               <tr key={item.id} className="border-b border-border/50 hover:bg-muted/30">
                 <td className="p-3">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(item.id)}
-                    onChange={() => toggleSelect(item.id)}
-                    className="rounded"
-                  />
+                  <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelect(item.id)} className="rounded" />
                 </td>
                 <td className="p-3 text-muted-foreground text-xs">
-                  {new Date(item.created_at).toLocaleString("ru-RU")}
+                  {new Date(item.created_at).toLocaleString("en-US")}
                 </td>
-                <td className="p-3 font-medium max-w-[200px] truncate" title={item.query}>
-                  {item.query}
-                </td>
+                <td className="p-3 font-medium max-w-[200px] truncate" title={item.query}>{item.query}</td>
+                <td className="p-3 text-center"><Badge variant="secondary">{item.entities_found}</Badge></td>
                 <td className="p-3 text-center">
-                  <Badge variant="secondary">{item.entities_found}</Badge>
-                </td>
-                <td className="p-3 text-center">
-                  <Badge variant={item.gaps_count > 0 ? "destructive" : "secondary"}>
-                    {item.gaps_count}
-                  </Badge>
+                  <Badge variant={item.gaps_count > 0 ? "destructive" : "secondary"}>{item.gaps_count}</Badge>
                 </td>
                 <td className="p-3 text-muted-foreground text-xs">{item.model_used}</td>
                 <td className="p-3">
                   <div className="flex items-center justify-end gap-1">
-                    <Link
-                      href={`/report/${item.id}`}
-                      className="text-primary hover:underline text-xs px-2 py-1"
-                    >
-                      Открыть
-                    </Link>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 text-xs text-muted-foreground hover:text-red-400"
-                      onClick={() => deleteOne(item.id)}
-                      disabled={actionLoading === item.id}
-                    >
+                    <Link href={`/report/${item.id}`} className="text-primary hover:underline text-xs px-2 py-1">Open</Link>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground hover:text-red-400"
+                      onClick={() => deleteOne(item.id)} disabled={actionLoading === item.id}>
                       {actionLoading === item.id ? "..." : "🗑"}
                     </Button>
                   </div>

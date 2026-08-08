@@ -6,12 +6,12 @@ import AdminPrompts from "@/components/AdminPrompts";
 export default function AdminPage() {
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">⚙️ Админ-панель</h1>
+      <h1 className="text-2xl font-bold">⚙️ Admin Panel</h1>
       <Card>
         <CardHeader>
-          <CardTitle>Модель и промпты</CardTitle>
+          <CardTitle>Model & Prompts</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Изменения применяются к следующему запросу без перезапуска
+            Changes take effect on the next query without restart
           </p>
         </CardHeader>
         <CardContent>
