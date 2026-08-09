@@ -64,6 +64,12 @@ class AnalysisReport(BaseModel):
     checklist: list[str] = []
     competitor_pages: list[CompetitorPage] = []
     user_page_text: str = ""
+    # Wave 1: полные данные для Knowledge Graph
+    all_competitor_entities: list[dict] = []
+    user_entities: list[dict] = []
+    cooccurrence_matrix: dict[str, int] = {}
+    competitor_entity_frequencies: dict[str, int] = {}
+    typed_edges: list[dict] = []
 
 
 class ModelSetting(BaseModel):

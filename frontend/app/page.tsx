@@ -147,6 +147,8 @@ export default function HomePage() {
   const [report, setReport] = useState<any>(null);
   const [error, setError] = useState("");
   const [allEntities, setAllEntities] = useState<any[]>([]);
+  const [cooccurrence, setCooccurrence] = useState<Record<string, number>>({});
+  const [typedEdges, setTypedEdges] = useState<Array<{source:string;target:string;weight:number;type:string}>>([]);
 
   const [savedQuery, setSavedQuery] = useState("");
   const searchParams = useSearchParams();
@@ -198,16 +200,63 @@ export default function HomePage() {
           setReport(s.result);
           setStatus("completed");
           localStorage.removeItem("serp_xray_active_analysis");
-          const gaps = s.result.gaps || [];
-          setAllEntities(
-            gaps.map((g: any) => ({
-              name: g.entity,
-              type: g.entity_type || "Concept",
-              confidence:
-                g.priority === "critical" ? 1.0 : g.priority === "high" ? 0.8 : 0.5,
-              source_url: g.found_on_urls?.[0]?.url || "",
-            }))
-          );
+          // Wave 1: сборка allEntities из трёх источников
+          const userEntities = (s.result.user_entities || []).map((e: any) => ({
+            name: e.name,
+            type: e.type || "Concept",
+            confidence: e.confidence || 0.5,
+            frequency: 1,
+            owner: "user" as const,
+            isGap: false,
+            description: e.description || "",
+            source_urls: e.source_urls || [],
+          }));
+          const competitorEntities = (s.result.all_competitor_entities || []).map((e: any) => ({
+            name: e.name,
+            type: e.type || "Concept",
+            confidence: e.adjusted_confidence || e.confidence || 0.5,
+            frequency: e.frequency || 1,
+            owner: "competitor" as const,
+            isGap: false,
+            description: e.description || "",
+            source_urls: e.source_urls || [],
+          }));
+          const userEntityNames = new Set(userEntities.map((e: any) => e.name.toLowerCase()));
+          const gapEntities = (s.result.gaps || []).map((g: any) => ({
+            name: g.entity,
+            type: g.entity_type || "Concept",
+            confidence: g.confidence ?? (g.priority === "critical" ? 1.0 : g.priority === "high" ? 0.8 : 0.5),
+            frequency: g.frequency || 1,
+            owner: "gap" as const,
+            isGap: true,
+            priority: g.priority,
+            description: g.competitor_description || "",
+            source_urls: (g.found_on_urls || []).map((u: any) => u.url || u),
+          }));
+          // Merge: competitor + gap (unique by name), then user
+          const seen = new Set<string>();
+          const mergedEntities: any[] = [];
+          for (const e of gapEntities) {
+            if (!seen.has(e.name.toLowerCase())) {
+              seen.add(e.name.toLowerCase());
+              mergedEntities.push(e);
+            }
+          }
+          for (const e of competitorEntities) {
+            if (!seen.has(e.name.toLowerCase())) {
+              seen.add(e.name.toLowerCase());
+              mergedEntities.push(e);
+            }
+          }
+          for (const e of userEntities) {
+            if (!seen.has(e.name.toLowerCase())) {
+              seen.add(e.name.toLowerCase());
+              mergedEntities.push(e);
+            }
+          }
+          setAllEntities(mergedEntities);
+          setCooccurrence(s.result.cooccurrence_matrix || {});
+          setTypedEdges(s.result.typed_edges || []);
         } else if (s.status === "failed") {
           setError(s.error || "Analysis failed");
           setStatus("failed");
@@ -243,6 +292,8 @@ export default function HomePage() {
     setReport(null);
     setError("");
     setAllEntities([]);
+    setCooccurrence({});
+    setTypedEdges([]);
 
     try {
       const userText = inputMode === "text" ? form.userText.trim() : undefined;
@@ -350,7 +401,7 @@ export default function HomePage() {
               <SectionHeading title="Entity Graph" badge={`${allEntities.length}`} />
               <Card className="shadow-card border-border/60">
                 <CardContent className="p-4">
-                  <EntityGraph entities={allEntities} />
+                  <EntityGraph entities={allEntities} cooccurrence={cooccurrence} typedEdges={typedEdges} showFilter />
                 </CardContent>
               </Card>
             </section>
