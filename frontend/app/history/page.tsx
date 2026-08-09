@@ -20,6 +20,7 @@ interface HistoryItem {
   stage: string;
   created_at: string;
   has_rewrite?: boolean;
+  rewrite_status?: string;
 }
 
 const API_BASE = "http://localhost:8000";
@@ -102,7 +103,9 @@ export default function HistoryPage() {
 
   // Auto-refresh while there are running analyses
   useEffect(() => {
-    const hasRunning = items.some((i) => i.status === "running");
+    const hasRunning = items.some(
+      (i) => i.status === "running" || i.rewrite_status === "running"
+    );
     if (!hasRunning) return;
     const interval = setInterval(loadHistory, 3000);
     return () => clearInterval(interval);
@@ -365,7 +368,7 @@ export default function HistoryPage() {
                         Rewritten
                       </Badge>
                     )}
-                    {rewritingIds.has(item.id) && (
+                    {(rewritingIds.has(item.id) || item.rewrite_status === "running") && (
                       <Badge className="text-[11px] font-medium bg-amber-100 text-amber-700 border-amber-200">
                         <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse mr-1.5" />
                         Generating…
@@ -446,6 +449,7 @@ export default function HistoryPage() {
           gaps={rewriteData.gaps}
           analysisId={rewriteData.analysisId}
           querySlug={rewriteData.querySlug}
+          autoStart
           onStatusChange={(status) => {
             const aid = rewriteData.analysisId;
             if (!aid) return;

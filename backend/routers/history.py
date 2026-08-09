@@ -44,8 +44,8 @@ async def bulk_delete(req: BulkDeleteRequest):
 
 @router.get("/history/{analysis_id}/rewrite", response_model=RewriteResult)
 async def get_rewrite_result(analysis_id: str):
-    """Возвращает сохранённый результат переписывания статьи."""
+    """Возвращает состояние rewrite для анализа (статус + текст, если готов)."""
     result = get_rewrite(analysis_id)
-    if not result:
-        raise HTTPException(status_code=404, detail="Rewrite not found")
+    if result["status"] == "not_found":
+        raise HTTPException(status_code=404, detail="Analysis not found")
     return RewriteResult(**result)

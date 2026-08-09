@@ -98,10 +98,17 @@ class RewriteRequest(BaseModel):
 
 
 class RewriteResponse(BaseModel):
-    rewritten_text: str
+    """Ответ POST /api/rewrite — немедленный, до завершения генерации."""
+    rewritten_text: str = ""
     rewritten_at: str = ""
+    status: str = ""  # none | running | completed | failed
+    started_at: str = ""
 
 
 class RewriteResult(BaseModel):
-    rewritten_text: str
-    rewritten_at: str
+    """Полное состояние rewrite (поллинг)."""
+    status: str  # none | running | completed | failed
+    error: str = ""
+    rewritten_text: str = ""
+    rewritten_at: str = ""
+    started_at: str = ""

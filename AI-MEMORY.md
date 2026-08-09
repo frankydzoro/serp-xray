@@ -258,7 +258,36 @@ Proxy for OpenRouter `/models` endpoint with server-side caching.
 - **Response shape**: `{data: ModelInfo[], total: number, total_all: number}`
 - **AdminPrompts.tsx** uses this for live model search (debounced, dropdown with model cards showing pricing + context)
 
+## Rewrite Article (background, autonomous)
+
+`POST /api/rewrite` is now ASYNC (BackgroundTasks) — returns in ~50ms with `status: running`,
+generation continues on the server even if the browser tab is closed.
+
+**DB columns** (migrations in `init_db`): `rewrite_status` (''|running|completed|failed),
+`rewrite_error`, `rewrite_started_at`. Legacy rows (text but no status) → treated as completed.
+
+**Endpoints:**
+- `POST /api/rewrite` — idempotent: returns existing result if completed, does NOT duplicate if running. Requires `analysis_id`. 400 on empty text/gaps.
+- `GET /api/rewrite/{id}/status` — poll (frontend: every 2.5s). Auto-fails rewrites stuck running >10min (server-restart protection).
+- `GET /api/history/{id}/rewrite` — same state (RewriteResult: status/error/rewritten_text/rewritten_at/started_at)
+
+**Frontend (RewriteModal.tsx)** — state machine idle→starting→running→done|error:
+- mount: checks server state, RESUMES in-flight generation (opens modal, restarts polling)
+- running: live elapsed timer, "runs on server — closing page is safe" hint
+- error: "Try again" button
+- `autoStart` prop: History page one-click flow starts generation on mount
+- History page: `rewrite_status` badge (amber "Generating…" from server), auto-refresh list while rewrite running
+
+**LLM timeout**: 180s per rewrite call (article + gaps is a big task; vs 30s for extraction).
+Model: `rewrite_model` setting (Admin → Rewrite Article tab), prompts: `rewrite_system_prompt`/`rewrite_user_prompt`.
+
 ## Recent Changes (2026-08-08, feat/openrouter-model-search)
+
+5. **Bug fixes batch** —
+   - `RewriteModal.tsx`: early `return null` moved AFTER all hooks (was before useCallback/useEffect — Rules of Hooks violation).
+   - `analyzer.py`: user-text cache key is now `user-text://<sha1[:16]>` (was shared `"user-text://"` — all pasted-text analyses returned the first one's entities from cache for 24h).
+   - `competitor_entity_coverage` is now real: % of user entities also found among competitor entities (was hardcoded 100.0). Formula: `len(user ∩ competitor) / len(user) × 100`. Symmetric to `user_entity_coverage`.
+   - `checklist` is now populated from gaps (`"Entity — recommendation"`) and rendered via `Checklist.tsx` on home + report pages, and exported in MD.
 
 1. **Empty Description fix** — 3 levels of fallback: `entity_extractor.py` generates `"Type: Name"` if LLM returns empty description; `gap_analyzer.py` has `_find_entity_description()` to enrich gaps from competitor data; quick-gaps generate fallback text.
 2. **Timeout tuning** — analysis timeout 10→20 min; OpenRouter calls 60→30s; pipeline now logs every stage with `logger.info()`.

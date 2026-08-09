@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import Modal from "@/components/Modal";
 import EntityGraph from "@/components/EntityGraph";
 import GapCard from "@/components/GapCard";
+import Checklist from "@/components/Checklist";
 import ReportSkeleton from "@/components/ReportSkeleton";
 import RewriteModal from "@/components/RewriteModal";
 import { analyzeQuery, getAnalysisStatus } from "@/lib/api";
@@ -420,17 +421,23 @@ export default function HomePage() {
                     gaps={report.gaps}
                     analysisId={analysisId || undefined}
                     querySlug={report.query}
-                    onStatusChange={(status) => {
-                      if (status === "done") {
-                        // Refresh status to show the rewritten badge if applicable
-                        // (analysis page uses polling, so it'll pick up on next poll)
-                      }
-                    }}
                   />
                 )}
               </CardContent>
             </Card>
           </section>
+
+          {/* Checklist */}
+          {report.checklist?.length > 0 && (
+            <section>
+              <SectionHeading title="Checklist" badge={`${report.checklist.length}`} />
+              <Card className="shadow-card border-border/60">
+                <CardContent className="p-4">
+                  <Checklist items={report.checklist} />
+                </CardContent>
+              </Card>
+            </section>
+          )}
 
           {/* Competitor pages */}
           {report.competitor_pages?.length > 0 && (

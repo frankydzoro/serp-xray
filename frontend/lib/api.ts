@@ -163,9 +163,13 @@ export interface RewriteModelData {
   model: string;
 }
 
-export interface RewriteResponse {
+/** Полное состояние rewrite: none | running | completed | failed */
+export interface RewriteState {
+  status: string;
+  error: string;
   rewritten_text: string;
   rewritten_at: string;
+  started_at: string;
 }
 
 export async function getRewriteModel(): Promise<RewriteModelData> {
@@ -206,12 +210,13 @@ export async function resetRewritePrompts(): Promise<RewritePromptsData> {
   return resp.json();
 }
 
-export async function rewriteArticle(
+/** Запускает rewrite в фоне. Возвращает статус немедленно (не блокирует до готовности). */
+export async function startRewrite(
   article_text: string,
   gaps: Array<Record<string, unknown>>,
   model?: string,
   analysis_id?: string,
-): Promise<RewriteResponse> {
+): Promise<RewriteState> {
   const resp = await fetch(`${API_BASE}/api/rewrite`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -224,10 +229,11 @@ export async function rewriteArticle(
   return resp.json();
 }
 
-export async function getRewriteResult(analysisId: string): Promise<RewriteResponse> {
-  const resp = await fetch(`${API_BASE}/api/history/${analysisId}/rewrite`);
+/** Поллинг состояния rewrite. 404 = анализ не найден. */
+export async function getRewriteStatus(analysisId: string): Promise<RewriteState> {
+  const resp = await fetch(`${API_BASE}/api/rewrite/${analysisId}/status`);
   if (!resp.ok) {
-    throw new Error(resp.status === 404 ? "No rewrite found" : "Failed to load rewrite");
+    throw new Error(resp.status === 404 ? "Analysis not found" : `Failed: HTTP ${resp.status}`);
   }
   return resp.json();
 }
