@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from db import list_analyses, get_analysis, delete_analysis, delete_analyses_bulk
+from db import list_analyses, get_analysis, delete_analysis, delete_analyses_bulk, get_rewrite
+from models.schemas import RewriteResult
 
 router = APIRouter(prefix="/api", tags=["history"])
 
@@ -39,3 +40,12 @@ async def bulk_delete(req: BulkDeleteRequest):
         raise HTTPException(status_code=400, detail="Empty ID list")
     count = delete_analyses_bulk(req.ids)
     return {"deleted": count, "ids": req.ids}
+
+
+@router.get("/history/{analysis_id}/rewrite", response_model=RewriteResult)
+async def get_rewrite_result(analysis_id: str):
+    """Возвращает состояние rewrite для анализа (статус + текст, если готов)."""
+    result = get_rewrite(analysis_id)
+    if result["status"] == "not_found":
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    return RewriteResult(**result)

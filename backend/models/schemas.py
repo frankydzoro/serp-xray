@@ -79,3 +79,36 @@ class ModelSetting(BaseModel):
 class PromptsSetting(BaseModel):
     entity_prompt: str
     gap_prompt: str
+
+
+class RewritePromptsSetting(BaseModel):
+    system_prompt: str
+    user_prompt: str
+
+
+class RewriteModelSetting(BaseModel):
+    model: str
+
+
+class RewriteRequest(BaseModel):
+    article_text: str
+    gaps: list[dict]
+    model: Optional[str] = None
+    analysis_id: Optional[str] = None
+
+
+class RewriteResponse(BaseModel):
+    """Ответ POST /api/rewrite — немедленный, до завершения генерации."""
+    rewritten_text: str = ""
+    rewritten_at: str = ""
+    status: str = ""  # none | running | completed | failed
+    started_at: str = ""
+
+
+class RewriteResult(BaseModel):
+    """Полное состояние rewrite (поллинг)."""
+    status: str  # none | running | completed | failed
+    error: str = ""
+    rewritten_text: str = ""
+    rewritten_at: str = ""
+    started_at: str = ""

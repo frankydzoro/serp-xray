@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import analyzer, admin, history
+from routers import analyzer, admin, history, models, rewrite
 from db import init_db
 
 
@@ -21,6 +21,8 @@ app.add_middleware(
 app.include_router(analyzer.router)
 app.include_router(admin.router)
 app.include_router(history.router)
+app.include_router(models.router)
+app.include_router(rewrite.router)
 
 
 @app.on_event("startup")

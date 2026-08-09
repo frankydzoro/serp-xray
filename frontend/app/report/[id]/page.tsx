@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import EntityGraph from "@/components/EntityGraph";
 import GapCard from "@/components/GapCard";
+import Checklist from "@/components/Checklist";
+import RewriteModal from "@/components/RewriteModal";
 import { getReport } from "@/lib/api";
 import { downloadMarkdown, downloadPDF } from "@/lib/export";
 
@@ -147,7 +149,7 @@ export default function ReportPage() {
       user_entity_coverage: data.user_entity_coverage || 0,
       competitor_entity_coverage: data.competitor_entity_coverage || 0,
       gaps: data.gaps || [],
-      checklist: [],
+      checklist: data.checklist || [],
       timestamp: report.created_at,
       competitor_pages: data.competitor_pages || [],
       user_page_text: data.user_page_text || "",
@@ -218,11 +220,31 @@ export default function ReportPage() {
       <section>
         <SectionHeading title="Content Gaps" badge={`${gapCount}`} />
         <Card className="shadow-card border-border/60">
-          <CardContent className="p-4">
+          <CardContent className="p-4 space-y-3">
             <GapCard gaps={data.gaps || []} />
+            {data.gaps?.length > 0 && data.user_page_text && (
+              <RewriteModal
+                articleText={data.user_page_text}
+                gaps={data.gaps}
+                analysisId={id as string}
+                querySlug={data.query}
+              />
+            )}
           </CardContent>
         </Card>
       </section>
+
+      {/* Checklist */}
+      {data.checklist?.length > 0 && (
+        <section>
+          <SectionHeading title="Checklist" badge={`${data.checklist.length}`} />
+          <Card className="shadow-card border-border/60">
+            <CardContent className="p-4">
+              <Checklist items={data.checklist} />
+            </CardContent>
+          </Card>
+        </section>
+      )}
 
       {/* Sticky export bar */}
       <div className="sticky bottom-4 flex justify-end gap-2">

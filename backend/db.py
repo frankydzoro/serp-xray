@@ -56,6 +56,26 @@ def init_db():
         conn.execute("ALTER TABLE analyses ADD COLUMN stage TEXT NOT NULL DEFAULT 'done'")
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE analyses ADD COLUMN rewritten_text TEXT NOT NULL DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE analyses ADD COLUMN rewritten_at TEXT NOT NULL DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE analyses ADD COLUMN rewrite_status TEXT NOT NULL DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE analyses ADD COLUMN rewrite_error TEXT NOT NULL DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE analyses ADD COLUMN rewrite_started_at TEXT NOT NULL DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
 
     conn.commit()
     conn.close()
@@ -167,6 +187,7 @@ def get_analysis(analysis_id: str) -> dict | None:
             result["result_json"] = json.loads(result["result_json"])
         except (json.JSONDecodeError, KeyError):
             result["result_json"] = {}
+        # Keep rewritten_text in the dict
         return result
     return None
 
@@ -174,7 +195,7 @@ def get_analysis(analysis_id: str) -> dict | None:
 def list_analyses(limit: int = 50) -> list[dict]:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT id, query, url, model_used, status, stage, created_at, result_json FROM analyses ORDER BY created_at DESC LIMIT ?",
+        "SELECT id, query, url, model_used, status, stage, created_at, rewritten_text, rewrite_status, result_json FROM analyses ORDER BY created_at DESC LIMIT ?",
         (limit,),
     ).fetchall()
     conn.close()
@@ -188,7 +209,12 @@ def list_analyses(limit: int = 50) -> list[dict]:
         except (json.JSONDecodeError, KeyError):
             d["entities_found"] = 0
             d["gaps_count"] = 0
+        # Add rewrite flags
+        has_rewrite = bool((d.get("rewritten_text", "") or "").strip())
+        d["has_rewrite"] = has_rewrite
+        d["rewrite_status"] = d.get("rewrite_status") or ("completed" if has_rewrite else "")
         del d["result_json"]
+        del d["rewritten_text"]
         results.append(d)
     return results
 
@@ -251,3 +277,96 @@ def delete_analyses_bulk(ids: list[str]) -> int:
     deleted = cursor.rowcount
     conn.close()
     return deleted
+
+
+# ── Rewrite ──────────────────────────────
+
+REWRITE_TIMEOUT_MINUTES = 10
+
+
+def start_rewrite(analysis_id: str) -> str | None:
+    """Помечает rewrite как running. Возвращает rewrite_started_at (ISO) или None, если анализ не найден."""
+    started_at = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    cursor = conn.execute(
+        "UPDATE analyses SET rewrite_status = 'running', rewrite_error = '', "
+        "rewrite_started_at = ? WHERE id = ?",
+        (started_at, analysis_id),
+    )
+    conn.commit()
+    found = cursor.rowcount > 0
+    conn.close()
+    return started_at if found else None
+
+
+def save_rewrite(analysis_id: str, rewritten_text: str) -> None:
+    """Сохраняет завершённый rewrite: текст + status=completed."""
+    conn = get_connection()
+    conn.execute(
+        "UPDATE analyses SET rewritten_text = ?, rewritten_at = ?, "
+        "rewrite_status = 'completed', rewrite_error = '' WHERE id = ?",
+        (rewritten_text, datetime.now(timezone.utc).isoformat(), analysis_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def fail_rewrite(analysis_id: str, error: str) -> None:
+    """Помечает rewrite как failed с текстом ошибки."""
+    conn = get_connection()
+    conn.execute(
+        "UPDATE analyses SET rewrite_status = 'failed', rewrite_error = ? WHERE id = ?",
+        (error, analysis_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_rewrite(analysis_id: str, timeout_minutes: int = REWRITE_TIMEOUT_MINUTES) -> dict:
+    """Возвращает текущее состояние rewrite.
+
+    Результат: {status: none|running|completed|failed|not_found, error,
+                rewritten_text, rewritten_at, started_at}
+
+    Застрявшие в 'running' дольше timeout_minutes автоматически помечаются failed
+    (защита от рестарта сервера посреди генерации).
+    """
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT rewritten_text, rewritten_at, rewrite_status, rewrite_error, rewrite_started_at "
+        "FROM analyses WHERE id = ?",
+        (analysis_id,),
+    ).fetchone()
+    if not row:
+        conn.close()
+        return {"status": "not_found", "error": "", "rewritten_text": "", "rewritten_at": "", "started_at": ""}
+
+    d = dict(row)
+    # Легаси-строки (до миграции): есть текст, но нет статуса → считаем completed
+    status = d["rewrite_status"] or ("completed" if (d["rewritten_text"] or "").strip() else "none")
+
+    # Авто-таймаут застрявших rewrite
+    if status == "running" and d["rewrite_started_at"]:
+        try:
+            started = datetime.fromisoformat(d["rewrite_started_at"])
+            elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+            if elapsed > timeout_minutes * 60:
+                error_msg = f"Timed out after {int(elapsed)}s"
+                conn.execute(
+                    "UPDATE analyses SET rewrite_status = 'failed', rewrite_error = ? WHERE id = ?",
+                    (error_msg, analysis_id),
+                )
+                conn.commit()
+                status = "failed"
+                d["rewrite_error"] = error_msg
+        except ValueError:
+            pass
+
+    conn.close()
+    return {
+        "status": status,
+        "error": d["rewrite_error"] or "",
+        "rewritten_text": d["rewritten_text"] if status == "completed" else "",
+        "rewritten_at": d["rewritten_at"] or "",
+        "started_at": d["rewrite_started_at"] or "",
+    }

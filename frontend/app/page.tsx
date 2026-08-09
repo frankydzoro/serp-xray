@@ -9,7 +9,9 @@ import { Textarea } from "@/components/ui/textarea";
 import Modal from "@/components/Modal";
 import EntityGraph from "@/components/EntityGraph";
 import GapCard from "@/components/GapCard";
+import Checklist from "@/components/Checklist";
 import ReportSkeleton from "@/components/ReportSkeleton";
+import RewriteModal from "@/components/RewriteModal";
 import { analyzeQuery, getAnalysisStatus } from "@/lib/api";
 
 /* ── Types ───────────────────────────────── */
@@ -411,11 +413,31 @@ export default function HomePage() {
           <section>
             <SectionHeading title="Content Gaps" badge={`${gapCount}`} />
             <Card className="shadow-card border-border/60">
-              <CardContent className="p-4">
+              <CardContent className="p-4 space-y-3">
                 <GapCard gaps={report.gaps || []} />
+                {report.gaps?.length > 0 && report.user_page_text && (
+                  <RewriteModal
+                    articleText={report.user_page_text}
+                    gaps={report.gaps}
+                    analysisId={analysisId || undefined}
+                    querySlug={report.query}
+                  />
+                )}
               </CardContent>
             </Card>
           </section>
+
+          {/* Checklist */}
+          {report.checklist?.length > 0 && (
+            <section>
+              <SectionHeading title="Checklist" badge={`${report.checklist.length}`} />
+              <Card className="shadow-card border-border/60">
+                <CardContent className="p-4">
+                  <Checklist items={report.checklist} />
+                </CardContent>
+              </Card>
+            </section>
+          )}
 
           {/* Competitor pages */}
           {report.competitor_pages?.length > 0 && (

@@ -1,6 +1,7 @@
 import uuid
 import asyncio
 import logging
+import hashlib
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -238,7 +239,8 @@ async def _run_pipeline(
             try:
                 if user_text:
                     report_user_text = user_text.strip()
-                    user_entities = await _extract_with_cache("user-text://", report_user_text, model)
+                    text_hash = hashlib.sha1(report_user_text.encode("utf-8")).hexdigest()[:16]
+                    user_entities = await _extract_with_cache(f"user-text://{text_hash}", report_user_text, model)
                 elif url:
                     report_user_text = await fetch_page_text(url)
                     user_entities = await _extract_with_cache(url, report_user_text, model)
@@ -281,6 +283,12 @@ async def _run_pipeline(
                 len(user_entity_names & unique_entity_names) / len(unique_entity_names) * 100, 1
             )
 
+        competitor_coverage = 0.0
+        if user_entity_names:
+            competitor_coverage = round(
+                len(user_entity_names & competitor_entity_names) / len(user_entity_names) * 100, 1
+            )
+
         gap_items = [
             GapItem(
                 entity=g["entity"],
@@ -295,14 +303,23 @@ async def _run_pipeline(
             for g in gaps
         ]
 
+        # Checklist: actionable items derived from gaps (already priority-sorted)
+        checklist = [
+            f"{gi.entity} — {gi.recommendation}"
+            if gi.recommendation
+            else f"Add information about {gi.entity} to the page"
+            for gi in gap_items[:20]
+        ]
+
         report = AnalysisReport(
             id=analysis_id,
             query=query,
             timestamp=datetime.now(timezone.utc).isoformat(),
             entities_found=len(all_entities),
             user_entity_coverage=user_coverage,
-            competitor_entity_coverage=100.0,
+            competitor_entity_coverage=competitor_coverage,
             gaps=gap_items[:20],
+            checklist=checklist,
             competitor_pages=competitor_pages,
             user_page_text=report_user_text,
             # Wave 1: новые поля для Entity Graph
