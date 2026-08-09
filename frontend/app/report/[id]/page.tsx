@@ -91,12 +91,53 @@ export default function ReportPage() {
 
   const data = report.result_json || {};
   const gapCount = data.gaps?.length ?? 0;
+
+  // Wave 1: сборка entities для графа из трёх источников
+  const userEntities = (data.user_entities || []).map((e: any) => ({
+    name: e.name,
+    type: e.type || "Concept",
+    confidence: e.confidence || 0.5,
+    frequency: 1,
+    owner: "user" as const,
+    isGap: false,
+    description: e.description || "",
+    source_urls: e.source_urls || [],
+  }));
+  const competitorEntities = (data.all_competitor_entities || []).map((e: any) => ({
+    name: e.name,
+    type: e.type || "Concept",
+    confidence: e.adjusted_confidence || e.confidence || 0.5,
+    frequency: e.frequency || 1,
+    owner: "competitor" as const,
+    isGap: false,
+    description: e.description || "",
+    source_urls: e.source_urls || [],
+  }));
   const gapEntities = (data.gaps || []).map((g: any) => ({
     name: g.entity,
     type: g.entity_type || "Concept",
-    confidence: g.priority === "critical" ? 1.0 : g.priority === "high" ? 0.8 : 0.5,
-    source_url: g.found_on_urls?.[0]?.url || "",
+    confidence: g.confidence ?? (g.priority === "critical" ? 1.0 : g.priority === "high" ? 0.8 : 0.5),
+    frequency: g.frequency || 1,
+    owner: "gap" as const,
+    isGap: true,
+    priority: g.priority,
+    description: g.competitor_description || "",
+    source_urls: (g.found_on_urls || []).map((u: any) => u.url || u),
   }));
+  // Merge: gap → competitor → user (unique by name)
+  const seen = new Set<string>();
+  const allEntitiesForGraph: any[] = [];
+  for (const e of gapEntities) {
+    if (!seen.has(e.name.toLowerCase())) { seen.add(e.name.toLowerCase()); allEntitiesForGraph.push(e); }
+  }
+  for (const e of competitorEntities) {
+    if (!seen.has(e.name.toLowerCase())) { seen.add(e.name.toLowerCase()); allEntitiesForGraph.push(e); }
+  }
+  for (const e of userEntities) {
+    if (!seen.has(e.name.toLowerCase())) { seen.add(e.name.toLowerCase()); allEntitiesForGraph.push(e); }
+  }
+  const cooccurrenceFromReport = data.cooccurrence_matrix || {};
+  const typedEdgesFromReport = data.typed_edges || [];
 
   const handleExport = async (format: "md" | "pdf") => {
     const rd = {
@@ -162,12 +203,12 @@ export default function ReportPage() {
       </div>
 
       {/* Entity Graph */}
-      {gapEntities.length > 0 && (
+      {allEntitiesForGraph.length > 0 && (
         <section>
-          <SectionHeading title="Entity Graph" badge={`${gapEntities.length}`} />
+          <SectionHeading title="Entity Graph" badge={`${allEntitiesForGraph.length}`} />
           <Card className="shadow-card border-border/60">
             <CardContent className="p-4">
-              <EntityGraph entities={gapEntities} />
+              <EntityGraph entities={allEntitiesForGraph} cooccurrence={cooccurrenceFromReport} typedEdges={typedEdgesFromReport} showFilter />
             </CardContent>
           </Card>
         </section>

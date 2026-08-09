@@ -108,6 +108,27 @@ async def _run_pipeline(
                 if url_info not in entity_urls[name]:
                     entity_urls[name].append(url_info)
 
+        # ── Wave 1.3: SERP position weight ──
+        def calc_position_weight(pos: int) -> float:
+            if pos <= 3: return 1.0
+            if pos <= 6: return 0.7
+            if pos <= 10: return 0.4
+            return 0.2
+
+        # ── Wave 1.2: Co-occurrence matrix ──
+        from collections import defaultdict as _dd
+        cooccurrence_raw: dict[str, int] = _dd(int)
+        for pe in page_entities:
+            page_entity_names = list({e["name"].lower() for e in pe["entities"]})
+            for i in range(len(page_entity_names)):
+                for j in range(i + 1, len(page_entity_names)):
+                    pair = "|".join(sorted([page_entity_names[i], page_entity_names[j]]))
+                    cooccurrence_raw[pair] += 1
+        cooccurrence_matrix = dict(cooccurrence_raw)
+
+        # ── Wave 2.1: Typed edges — parent_child detection ──
+        # Вычисляется ПОСЛЕ построения competitor_grouped (ниже)
+
         # Группируем ВСЕ сущности конкурентов по имени: frequency + descriptions + source_urls
         competitor_grouped: dict[str, dict] = {}
         for e in all_entities:
@@ -120,6 +141,7 @@ async def _run_pipeline(
                     "frequency": 1,
                     "descriptions": [],
                     "source_urls": [],
+                    "positions": [],     # Wave 1.3: позиции для расчёта visibility
                 }
                 desc = e.get("description", "")
                 if desc:
@@ -145,6 +167,69 @@ async def _run_pipeline(
             reverse=True,
         )
 
+        # ── Wave 1.3: добавление позиций и adjusted_confidence ──
+        from statistics import mean as _mean
+        for key, group in competitor_grouped.items():
+            pages = entity_urls.get(key, [])
+            positions = [p["position"] for p in pages]
+            group["positions"] = positions
+            if positions:
+                avg_pos_weight = _mean([calc_position_weight(p) for p in positions])
+                group["adjusted_confidence"] = round(group["confidence"] * avg_pos_weight, 3)
+            else:
+                group["adjusted_confidence"] = group["confidence"]
+
+        # ── Wave 1.1: all_competitor_entities для фронтенда ──
+        all_competitor_entities = [
+            {
+                "name": g["name"],
+                "type": g["type"],
+                "confidence": g["confidence"],
+                "adjusted_confidence": g.get("adjusted_confidence", g["confidence"]),
+                "frequency": g["frequency"],
+                "description": g["descriptions"][0] if g["descriptions"] else "",
+                "descriptions": g["descriptions"],
+                "source_urls": g["source_urls"],
+                "positions": g.get("positions", []),
+            }
+            for g in competitor_grouped.values()
+        ]
+
+        # ── Wave 2.1: Typed edges — parent_child detection ──
+        entity_desc_map: dict[str, str] = {
+            g["name"].lower(): (g["descriptions"] or [""])[0]
+            for g in competitor_grouped.values()
+        }
+        typed_edges: list[dict] = []
+        for pair_key, weight in cooccurrence_matrix.items():
+            parts = pair_key.split("|")
+            if len(parts) != 2:
+                continue
+            e1, e2 = parts
+            desc1 = entity_desc_map.get(e1, "")
+            desc2 = entity_desc_map.get(e2, "")
+            edge_type = "co_occurrence"
+            if e2 in desc1.lower() or e1 in desc2.lower():
+                edge_type = "parent_child"
+            typed_edges.append({
+                "source": e1,
+                "target": e2,
+                "weight": weight,
+                "type": edge_type,
+            })
+
+        # Частоты сущностей
+        competitor_entity_frequencies = {
+            g["name"]: g["frequency"]
+            for g in competitor_grouped.values()
+        }
+
+        # Frequency map для обогащения gaps
+        entity_freq: dict[str, int] = {
+            g["name"].lower(): g["frequency"]
+            for g in competitor_grouped.values()
+        }
+
         # Страница пользователя
         user_entities: list[dict] = []
         report_user_text = ""
@@ -160,11 +245,27 @@ async def _run_pipeline(
             except Exception:
                 pass
 
+        # ── Wave 1.1: user_entities для фронтенда ──
+        user_entities_list = [
+            {
+                "name": e.get("name", ""),
+                "type": e.get("type", "Concept"),
+                "confidence": e.get("confidence", 0.5),
+                "description": e.get("description", ""),
+                "source_urls": [e.get("source_url", "")] if e.get("source_url") else [],
+            }
+            for e in user_entities
+        ]
+
         # Stage: analyzing gaps
         logger.info("[%s] Stage: analyzing gaps (user_entities=%d, competitor_entities=%d)",
                      analysis_id, len(user_entities), len(competitor_entities))
         update_analysis_status(analysis_id, "analyzing")
         gaps = await analyze_gaps(user_entities, competitor_entities, model, query)
+
+        # ── Wave 1.2: enrichment gaps частотой ──
+        for g in gaps:
+            g["frequency"] = entity_freq.get(g["entity"].lower(), 1)
 
         # Stage: building report
         logger.info("[%s] Stage: building report (%d gaps)", analysis_id, len(gaps))
@@ -204,6 +305,12 @@ async def _run_pipeline(
             gaps=gap_items[:20],
             competitor_pages=competitor_pages,
             user_page_text=report_user_text,
+            # Wave 1: новые поля для Entity Graph
+            all_competitor_entities=all_competitor_entities,
+            user_entities=user_entities_list,
+            cooccurrence_matrix=cooccurrence_matrix,
+            competitor_entity_frequencies=competitor_entity_frequencies,
+            typed_edges=typed_edges,
         )
 
         complete_analysis(analysis_id, report.model_dump())
