@@ -1,6 +1,9 @@
 import httpx
 import asyncio
+import logging
 from config import SERPAPI_API_KEY, DEFAULT_SERP_RESULTS
+
+logger = logging.getLogger(__name__)
 
 
 async def fetch_serp(query: str, engine: str = "google", num: int = 20) -> list[dict]:
@@ -115,9 +118,12 @@ async def fetch_top20(query: str, engine: str = "google", num: int = None) -> li
 
 
 async def fetch_page_text(url: str, timeout: int = 15) -> str:
-    """Загружает текст страницы, вырезая HTML-теги через BeautifulSoup."""
-    from bs4 import BeautifulSoup
-
+    """Извлекает основной контент страницы через Trafilatura (markdown).
+    
+    Trafilatura автоматически отсеивает навигацию, меню, футеры, сайдбары,
+    рекламу и прочий boilerplate. Сохраняет структуру: заголовки, списки, таблицы.
+    При неудаче — fallback на BeautifulSoup с улучшенной фильтрацией.
+    """
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; SerpXray/1.0; +http://localhost:3000)"
     }
@@ -125,11 +131,47 @@ async def fetch_page_text(url: str, timeout: int = 15) -> str:
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
         resp = await client.get(url, headers=headers)
         resp.raise_for_status()
+        html = resp.text
 
-        soup = BeautifulSoup(resp.text, "lxml")
-        for tag in soup(["script", "style", "nav", "footer", "header"]):
+    # ── Trafilatura (основной метод) ──
+    try:
+        import trafilatura
+        extracted = trafilatura.extract(
+            html,
+            output_format="markdown",
+            include_tables=True,
+            include_images=False,
+            include_links=False,
+        )
+        if extracted and len(extracted.strip()) > 50:
+            return extracted.strip()
+        if extracted:
+            logger.warning(
+                "Trafilatura returned short content (%d chars) for %s, falling back to BS4",
+                len(extracted.strip()), url,
+            )
+        else:
+            logger.warning("Trafilatura returned None for %s, falling back to BS4", url)
+    except Exception as e:
+        logger.warning("Trafilatura failed for %s: %s, falling back to BS4", url, e)
+
+    # ── BeautifulSoup (fallback) ──
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "lxml")
+
+    # Удаляем семантические контейнеры
+    for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
+        tag.decompose()
+
+    # Удаляем по CSS-селекторам: меню, сайдбары, хлебные крошки, cookie-баннеры
+    for selector in [
+        "[role='navigation']", "[role='banner']", "[role='contentinfo']",
+        ".menu", ".nav", ".sidebar", ".footer", ".header",
+        ".breadcrumb", ".cookie", ".banner",
+    ]:
+        for tag in soup.select(selector):
             tag.decompose()
 
-        text = soup.get_text(separator="\n", strip=True)
-        lines = [line.strip() for line in text.split("\n") if line.strip()]
-        return "\n".join(lines)
+    text = soup.get_text(separator="\n", strip=True)
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    return "\n".join(lines)

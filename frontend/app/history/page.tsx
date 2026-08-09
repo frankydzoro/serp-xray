@@ -6,8 +6,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { getHistory } from "@/lib/api";
-import { downloadMarkdown, downloadPDF } from "@/lib/export";
+import RewriteModal from "@/components/RewriteModal";
+import { getHistory, getReport } from "@/lib/api";
+import { downloadMarkdown, downloadPDF, downloadRewrittenMD } from "@/lib/export";
 
 interface HistoryItem {
   id: string;
@@ -18,6 +19,8 @@ interface HistoryItem {
   status: string;
   stage: string;
   created_at: string;
+  has_rewrite?: boolean;
+  rewrite_status?: string;
 }
 
 const API_BASE = "http://localhost:8000";
@@ -82,6 +85,9 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [rewriteData, setRewriteData] = useState<{ articleText: string; gaps: any[]; analysisId?: string; querySlug?: string } | null>(null);
+  const [rewriteLoadingId, setRewriteLoadingId] = useState<string | null>(null);
+  const [rewritingIds, setRewritingIds] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
 
   const loadHistory = useCallback(async () => {
@@ -97,7 +103,9 @@ export default function HistoryPage() {
 
   // Auto-refresh while there are running analyses
   useEffect(() => {
-    const hasRunning = items.some((i) => i.status === "running");
+    const hasRunning = items.some(
+      (i) => i.status === "running" || i.rewrite_status === "running"
+    );
     if (!hasRunning) return;
     const interval = setInterval(loadHistory, 3000);
     return () => clearInterval(interval);
@@ -168,6 +176,41 @@ export default function HistoryPage() {
         await downloadPDF({ id, query: data.query, ...data });
       }
       await new Promise((r) => setTimeout(r, 300));
+    }
+    setActionLoading(null);
+  };
+
+  const handleRewrite = async (itemId: string) => {
+    setRewriteLoadingId(itemId);
+    try {
+      const report = await getReport(itemId);
+      const data = report.result_json || {};
+      if (data.user_page_text && data.gaps?.length > 0) {
+        setRewriteData({
+          articleText: data.user_page_text,
+          gaps: data.gaps,
+          analysisId: itemId,
+          querySlug: data.query || itemId,
+        });
+      }
+    } catch {
+      // silently fail, user can retry
+    }
+    setRewriteLoadingId(null);
+  };
+
+  const handleDownloadRewriteMD = async (itemId: string) => {
+    setActionLoading(itemId);
+    try {
+      const report = await getReport(itemId);
+      const data = report.result_json || {};
+      const rewrittenText = report.rewritten_text || "";
+      const articleText = data.user_page_text || "";
+      if (rewrittenText && articleText) {
+        downloadRewrittenMD(articleText, rewrittenText, data.query || itemId);
+      }
+    } catch {
+      // silently fail
     }
     setActionLoading(null);
   };
@@ -320,6 +363,17 @@ export default function HistoryPage() {
                         No gaps
                       </Badge>
                     )}
+                    {item.has_rewrite && (
+                      <Badge className="text-[11px] font-medium bg-violet-100 text-violet-700 border-violet-200">
+                        Rewritten
+                      </Badge>
+                    )}
+                    {(rewritingIds.has(item.id) || item.rewrite_status === "running") && (
+                      <Badge className="text-[11px] font-medium bg-amber-100 text-amber-700 border-amber-200">
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse mr-1.5" />
+                        Generating…
+                      </Badge>
+                    )}
                   </>
                 )}
               </div>
@@ -342,6 +396,34 @@ export default function HistoryPage() {
                   >
                     {item.status === "running" ? "View" : "Open"}
                   </Link>
+                {item.status === "completed" && item.gaps_count > 0 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs text-muted-foreground hover:text-primary"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRewrite(item.id);
+                    }}
+                    disabled={rewriteLoadingId === item.id || rewritingIds.has(item.id)}
+                  >
+                    {rewritingIds.has(item.id) ? "Rewriting…" : rewriteLoadingId === item.id ? "..." : "Rewrite"}
+                  </Button>
+                )}
+                {item.status === "completed" && item.has_rewrite && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs text-muted-foreground hover:text-violet-600"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDownloadRewriteMD(item.id);
+                    }}
+                    disabled={actionLoading === item.id}
+                  >
+                    MD
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="ghost"
@@ -359,6 +441,40 @@ export default function HistoryPage() {
           </Card>
         ))}
       </div>
+
+      {/* Rewrite modal (lazy-loaded from history) */}
+      {rewriteData && (
+        <RewriteModal
+          articleText={rewriteData.articleText}
+          gaps={rewriteData.gaps}
+          analysisId={rewriteData.analysisId}
+          querySlug={rewriteData.querySlug}
+          autoStart
+          onStatusChange={(status) => {
+            const aid = rewriteData.analysisId;
+            if (!aid) return;
+            if (status === "loading") {
+              setRewritingIds((prev) => new Set(prev).add(aid));
+            } else if (status === "done") {
+              setRewritingIds((prev) => {
+                const next = new Set(prev);
+                next.delete(aid);
+                return next;
+              });
+              // Refresh history to get has_rewrite flag
+              loadHistory();
+              setRewriteData(null);
+            } else if (status === "error") {
+              setRewritingIds((prev) => {
+                const next = new Set(prev);
+                next.delete(aid);
+                return next;
+              });
+              setRewriteData(null);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
