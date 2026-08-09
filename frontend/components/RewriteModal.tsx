@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { rewriteArticle } from "@/lib/api";
+import DiffView from "@/components/DiffView";
+import { rewriteArticle, getRewriteResult } from "@/lib/api";
+import { downloadRewrittenMD } from "@/lib/export";
 
 interface GapItem {
   entity: string;
@@ -17,35 +19,75 @@ interface GapItem {
 interface Props {
   articleText: string;
   gaps: GapItem[];
-  /** Called with the rewritten text when done */
-  onComplete?: (text: string) => void;
+  analysisId?: string;
+  querySlug?: string;
+  /** Родительский компонент может отслеживать статус */
+  onStatusChange?: (status: "idle" | "loading" | "done" | "error") => void;
 }
 
-export default function RewriteModal({ articleText, gaps, onComplete }: Props) {
+type Tab = "original" | "result" | "diff";
+
+export default function RewriteModal({ articleText, gaps, analysisId, querySlug, onStatusChange }: Props) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [tab, setTab] = useState<Tab>("result");
   const [copied, setCopied] = useState(false);
+  // Track if we already checked DB for cached rewrite
+  const [checkedCache, setCheckedCache] = useState(false);
 
-  if (gaps.length === 0) {
-    // Don't render if no gaps
-    return null;
-  }
+  if (gaps.length === 0) return null;
+
+  const notifyStatus = useCallback(
+    (s: "idle" | "loading" | "done" | "error") => {
+      onStatusChange?.(s);
+    },
+    [onStatusChange],
+  );
+
+  // Check for existing rewrite in DB when modal opens
+  useEffect(() => {
+    if (!open || !analysisId || checkedCache) return;
+    setCheckedCache(true);
+    getRewriteResult(analysisId)
+      .then((res) => {
+        setResult(res.rewritten_text);
+        setTab("result");
+        notifyStatus("done");
+      })
+      .catch(() => {
+        // No cached rewrite — normal
+      });
+  }, [open, analysisId, checkedCache, notifyStatus]);
 
   const handleRewrite = async () => {
+    // If we already have a result, just show modal
+    if (result) {
+      setOpen(true);
+      return;
+    }
+
     setOpen(true);
     setLoading(true);
     setError("");
-    setResult(null);
+    setTab("result");
+    notifyStatus("loading");
+
     try {
-      const res = await rewriteArticle(articleText, gaps);
+      const res = await rewriteArticle(articleText, gaps, undefined, analysisId);
       setResult(res.rewritten_text);
-      onComplete?.(res.rewritten_text);
+      notifyStatus("done");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Unknown error");
+      notifyStatus("error");
     }
     setLoading(false);
+  };
+
+  const handleClose = () => {
+    setOpen(false);
+    // Keep result so next open is instant
   };
 
   const handleCopy = async () => {
@@ -55,7 +97,6 @@ export default function RewriteModal({ articleText, gaps, onComplete }: Props) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback: use textarea selection
       const textarea = document.getElementById("rewrite-result") as HTMLTextAreaElement;
       if (textarea) {
         textarea.select();
@@ -66,30 +107,59 @@ export default function RewriteModal({ articleText, gaps, onComplete }: Props) {
     }
   };
 
+  const handleDownloadMD = () => {
+    if (!result) return;
+    downloadRewrittenMD(articleText, result, querySlug || "rewritten");
+  };
+
+  const tabs: { key: Tab; label: string }[] = [
+    { key: "original", label: "Original" },
+    ...(result ? [{ key: "result" as Tab, label: "Result" }] : []),
+    ...(result ? [{ key: "diff" as Tab, label: "Diff" }] : []),
+  ];
+
   return (
     <>
-      {/* Trigger button */}
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={handleRewrite}
-        disabled={loading}
-        className="text-xs font-medium"
-      >
-        <svg
-          className="w-3.5 h-3.5 mr-1.5"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+      {/* Trigger button + status indicator */}
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleRewrite}
+          disabled={loading}
+          className="text-xs font-medium"
         >
-          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-        </svg>
-        {loading ? "Rewriting…" : "Rewrite Article"}
-      </Button>
+          <svg
+            className="w-3.5 h-3.5 mr-1.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+          </svg>
+          {loading
+            ? "Rewriting…"
+            : result
+              ? "View Rewrite"
+              : "Rewrite Article"}
+        </Button>
+        {loading && (
+          <span className="text-[11px] text-muted-foreground animate-pulse">
+            <span className="inline-block w-2 h-2 rounded-full bg-amber-400 mr-1" />
+            Generating… (you can close the modal, result will be saved)
+          </span>
+        )}
+        {!loading && result && (
+          <span className="text-[11px] text-emerald-600">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 mr-1" />
+            Ready
+          </span>
+        )}
+      </div>
 
       {/* Modal */}
       {open && (
@@ -97,7 +167,7 @@ export default function RewriteModal({ articleText, gaps, onComplete }: Props) {
           {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-            onClick={() => !loading && setOpen(false)}
+            onClick={handleClose}
           />
 
           {/* Dialog */}
@@ -117,15 +187,16 @@ export default function RewriteModal({ articleText, gaps, onComplete }: Props) {
                   <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                   <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                 </svg>
-                <h2 className="text-sm font-semibold">Rewrite Article</h2>
+                <h2 className="text-sm font-semibold">
+                  {result ? "View Rewrite" : "Rewrite Article"}
+                </h2>
                 <span className="text-[11px] text-muted-foreground">
                   {gaps.length} gap{gaps.length !== 1 ? "s" : ""}
                 </span>
               </div>
               <button
-                onClick={() => !loading && setOpen(false)}
+                onClick={handleClose}
                 className="text-muted-foreground hover:text-foreground transition-colors"
-                disabled={loading}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <path d="M18 6 6 18M6 6l12 12" />
@@ -134,7 +205,7 @@ export default function RewriteModal({ articleText, gaps, onComplete }: Props) {
             </div>
 
             {/* Body */}
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-hidden flex flex-col min-h-0">
               {loading && (
                 <div className="flex flex-col items-center justify-center py-16 space-y-4">
                   <div className="w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
@@ -142,57 +213,77 @@ export default function RewriteModal({ articleText, gaps, onComplete }: Props) {
                     Integrating {gaps.length} gap{gaps.length !== 1 ? "s" : ""} into article…
                   </p>
                   <p className="text-[11px] text-muted-foreground/60">
-                    This may take 30–60 seconds depending on model and article length
+                    This may take 30–60 seconds. You can close this modal — the result will be saved.
                   </p>
                 </div>
               )}
 
               {error && (
-                <div className="rounded-lg bg-destructive/5 border border-destructive/20 p-4">
-                  <p className="text-sm font-semibold text-destructive mb-1">Error</p>
-                  <p className="text-sm text-muted-foreground">{error}</p>
+                <div className="p-6">
+                  <div className="rounded-lg bg-destructive/5 border border-destructive/20 p-4">
+                    <p className="text-sm font-semibold text-destructive mb-1">Error</p>
+                    <p className="text-sm text-muted-foreground">{error}</p>
+                  </div>
                 </div>
               )}
 
-              {result && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs text-muted-foreground">
-                      Rewrite complete — {result.length.toLocaleString()} characters
-                    </p>
-                    <Button size="sm" variant="outline" onClick={handleCopy} className="text-xs">
-                      {copied ? (
-                        <>
-                          <svg className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                          Copied
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                          </svg>
-                          Copy
-                        </>
-                      )}
-                    </Button>
+              {result && !loading && (
+                <>
+                  {/* Tab bar */}
+                  <div className="flex items-center gap-1 px-6 py-3 bg-muted/50 border-b border-border/40">
+                    {tabs.map((t) => (
+                      <button
+                        key={t.key}
+                        onClick={() => setTab(t.key)}
+                        className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                          tab === t.key
+                            ? "bg-card text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                    <div className="flex-1" />
+                    {tab === "result" && (
+                      <>
+                        <Button size="sm" variant="outline" onClick={handleCopy} className="text-xs h-7">
+                          {copied ? "Copied" : "Copy"}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={handleDownloadMD} className="text-xs h-7 ml-1.5">
+                          Download MD
+                        </Button>
+                      </>
+                    )}
                   </div>
-                  <Textarea
-                    id="rewrite-result"
-                    value={result}
-                    readOnly
-                    rows={20}
-                    className="font-mono text-xs leading-relaxed resize-y"
-                  />
-                </div>
+
+                  {/* Tab content */}
+                  <div className="flex-1 overflow-y-auto p-6">
+                    {tab === "original" && (
+                      <pre className="text-xs leading-relaxed whitespace-pre-wrap font-mono text-muted-foreground">
+                        {articleText}
+                      </pre>
+                    )}
+                    {tab === "result" && (
+                      <Textarea
+                        id="rewrite-result"
+                        value={result}
+                        readOnly
+                        rows={20}
+                        className="font-mono text-xs leading-relaxed resize-y min-h-[300px]"
+                      />
+                    )}
+                    {tab === "diff" && (
+                      <DiffView original={articleText} rewritten={result} />
+                    )}
+                  </div>
+                </>
               )}
             </div>
 
             {/* Footer */}
             <div className="flex justify-end px-6 py-3 border-t border-border/40">
-              <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
+              <Button size="sm" variant="ghost" onClick={handleClose}>
                 Close
               </Button>
             </div>

@@ -1,11 +1,12 @@
 import json
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 from openai import AsyncOpenAI
 
 from config import DEFAULT_MODEL, OPENROUTER_API_KEY, OPENROUTER_BASE_URL
-from db import get_setting
+from db import get_setting, save_rewrite
 from models.schemas import RewriteRequest, RewriteResponse
 from prompts.default import REWRITE_SYSTEM_PROMPT, REWRITE_USER_PROMPT
 
@@ -79,4 +80,14 @@ async def rewrite_article(req: RewriteRequest) -> RewriteResponse:
     if not content:
         raise HTTPException(status_code=500, detail="Empty response from LLM")
 
-    return RewriteResponse(rewritten_text=content.strip())
+    rewritten_text = content.strip()
+    rewritten_at = datetime.now(timezone.utc).isoformat()
+
+    # Сохраняем в БД если передан analysis_id
+    if req.analysis_id:
+        try:
+            save_rewrite(req.analysis_id, rewritten_text)
+        except Exception:
+            logger.exception("Failed to save rewrite for %s", req.analysis_id)
+
+    return RewriteResponse(rewritten_text=rewritten_text, rewritten_at=rewritten_at)

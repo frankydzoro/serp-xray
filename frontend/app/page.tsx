@@ -418,6 +418,14 @@ export default function HomePage() {
                   <RewriteModal
                     articleText={report.user_page_text}
                     gaps={report.gaps}
+                    analysisId={analysisId || undefined}
+                    querySlug={report.query}
+                    onStatusChange={(status) => {
+                      if (status === "done") {
+                        // Refresh status to show the rewritten badge if applicable
+                        // (analysis page uses polling, so it'll pick up on next poll)
+                      }
+                    }}
                   />
                 )}
               </CardContent>

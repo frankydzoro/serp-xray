@@ -146,3 +146,35 @@ function triggerDownload(blob: Blob, filename: string) {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+
+/* ── Rewritten article export ───────────── */
+
+/**
+ * Generates a Markdown file with the rewritten article
+ * and <!-- ADDED --> markers for added content.
+ */
+export function downloadRewrittenMD(
+  original: string,
+  rewritten: string,
+  slug: string,
+) {
+  const { diff_match_patch } = require("diff-match-patch");
+  const dmp = new diff_match_patch();
+  const diffs = dmp.diff_main(original, rewritten, true);
+  dmp.diff_cleanupSemantic(diffs);
+
+  const parts: string[] = [];
+  for (const [op, text] of diffs) {
+    if (op === 0) {
+      parts.push(text);
+    } else if (op === 1) {
+      parts.push(`<!-- ADDED -->${text}<!-- /ADDED -->`);
+    }
+    // op === -1 (removed) — skip in rewritten output
+  }
+
+  const safeSlug = slug.replace(/[^a-zA-Z0-9а-яА-ЯёЁ_-]/g, "_").slice(0, 60);
+  const blob = new Blob([parts.join("")], { type: "text/markdown" });
+  triggerDownload(blob, `${safeSlug}-rewritten.md`);
+}

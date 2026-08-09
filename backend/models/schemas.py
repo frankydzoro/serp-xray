@@ -94,7 +94,14 @@ class RewriteRequest(BaseModel):
     article_text: str
     gaps: list[dict]
     model: Optional[str] = None
+    analysis_id: Optional[str] = None
 
 
 class RewriteResponse(BaseModel):
     rewritten_text: str
+    rewritten_at: str = ""
+
+
+class RewriteResult(BaseModel):
+    rewritten_text: str
+    rewritten_at: str

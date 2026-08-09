@@ -225,6 +225,8 @@ export default function ReportPage() {
               <RewriteModal
                 articleText={data.user_page_text}
                 gaps={data.gaps}
+                analysisId={id as string}
+                querySlug={data.query}
               />
             )}
           </CardContent>

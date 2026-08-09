@@ -165,6 +165,7 @@ export interface RewriteModelData {
 
 export interface RewriteResponse {
   rewritten_text: string;
+  rewritten_at: string;
 }
 
 export async function getRewriteModel(): Promise<RewriteModelData> {
@@ -208,16 +209,25 @@ export async function resetRewritePrompts(): Promise<RewritePromptsData> {
 export async function rewriteArticle(
   article_text: string,
   gaps: Array<Record<string, unknown>>,
-  model?: string
+  model?: string,
+  analysis_id?: string,
 ): Promise<RewriteResponse> {
   const resp = await fetch(`${API_BASE}/api/rewrite`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ article_text, gaps, model }),
+    body: JSON.stringify({ article_text, gaps, model, analysis_id }),
   });
   if (!resp.ok) {
     const err = await resp.text();
     throw new Error(err);
+  }
+  return resp.json();
+}
+
+export async function getRewriteResult(analysisId: string): Promise<RewriteResponse> {
+  const resp = await fetch(`${API_BASE}/api/history/${analysisId}/rewrite`);
+  if (!resp.ok) {
+    throw new Error(resp.status === 404 ? "No rewrite found" : "Failed to load rewrite");
   }
   return resp.json();
 }

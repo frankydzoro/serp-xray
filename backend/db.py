@@ -56,6 +56,14 @@ def init_db():
         conn.execute("ALTER TABLE analyses ADD COLUMN stage TEXT NOT NULL DEFAULT 'done'")
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE analyses ADD COLUMN rewritten_text TEXT NOT NULL DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE analyses ADD COLUMN rewritten_at TEXT NOT NULL DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
 
     conn.commit()
     conn.close()
@@ -167,6 +175,7 @@ def get_analysis(analysis_id: str) -> dict | None:
             result["result_json"] = json.loads(result["result_json"])
         except (json.JSONDecodeError, KeyError):
             result["result_json"] = {}
+        # Keep rewritten_text in the dict
         return result
     return None
 
@@ -174,7 +183,7 @@ def get_analysis(analysis_id: str) -> dict | None:
 def list_analyses(limit: int = 50) -> list[dict]:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT id, query, url, model_used, status, stage, created_at, result_json FROM analyses ORDER BY created_at DESC LIMIT ?",
+        "SELECT id, query, url, model_used, status, stage, created_at, rewritten_text, result_json FROM analyses ORDER BY created_at DESC LIMIT ?",
         (limit,),
     ).fetchall()
     conn.close()
@@ -188,7 +197,10 @@ def list_analyses(limit: int = 50) -> list[dict]:
         except (json.JSONDecodeError, KeyError):
             d["entities_found"] = 0
             d["gaps_count"] = 0
+        # Add rewrite flag
+        d["has_rewrite"] = bool((d.get("rewritten_text", "") or "").strip())
         del d["result_json"]
+        del d["rewritten_text"]
         results.append(d)
     return results
 
@@ -251,3 +263,29 @@ def delete_analyses_bulk(ids: list[str]) -> int:
     deleted = cursor.rowcount
     conn.close()
     return deleted
+
+
+# ── Rewrite ──────────────────────────────
+
+def save_rewrite(analysis_id: str, rewritten_text: str) -> None:
+    """Сохраняет переписанную статью в анализе."""
+    conn = get_connection()
+    conn.execute(
+        "UPDATE analyses SET rewritten_text = ?, rewritten_at = ? WHERE id = ?",
+        (rewritten_text, datetime.now(timezone.utc).isoformat(), analysis_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_rewrite(analysis_id: str) -> dict | None:
+    """Возвращает переписанную статью для анализа."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT rewritten_text, rewritten_at FROM analyses WHERE id = ? AND rewritten_text != ''",
+        (analysis_id,),
+    ).fetchone()
+    conn.close()
+    if row:
+        return {"rewritten_text": row["rewritten_text"], "rewritten_at": row["rewritten_at"]}
+    return None
