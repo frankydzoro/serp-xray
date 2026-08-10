@@ -16,7 +16,7 @@ interface ReportData {
   gaps: GapItem[];
   checklist: string[];
   timestamp?: string;
-  competitor_pages?: { url: string; title: string; position: number; engine: string; text: string }[];
+  competitor_pages?: { url: string; title: string; position: number; engine: string; text: string; entities?: { name: string; type?: string; confidence?: number; description?: string }[] }[];
   user_page_text?: string;
 }
 

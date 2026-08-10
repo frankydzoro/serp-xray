@@ -51,6 +51,7 @@ class CompetitorPage(BaseModel):
     position: int
     engine: str
     text: str
+    entities: list[dict] = []
 
 
 class AnalysisReport(BaseModel):

@@ -96,6 +96,11 @@ async def _run_pipeline(
 
         page_entities = await asyncio.gather(*(extract_for_page(p) for p in pages))
 
+        # Привязываем постраничные сущности к страницам конкурентов
+        entities_by_url = {pe["url"]: pe["entities"] for pe in page_entities}
+        for cp in competitor_pages:
+            cp.entities = entities_by_url.get(cp.url, [])
+
         # Собираем сущности со всех страниц конкурентов
         all_entities: list[dict] = []
         entity_urls: dict[str, list[dict]] = {}
