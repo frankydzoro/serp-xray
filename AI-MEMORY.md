@@ -323,6 +323,28 @@ PR #3 merged to main (`a8e0b6e`).
 3. **Report page — универсальный** — поллинг `getAnalysisStatus` каждые 2с: running→ReportSkeleton, failed→error+Back to History, completed→один `getReport`. Терминальный `settledRef` останавливает поллинг (иначе каждый тик пересоздавал граф).
 4. **History** — running-анализы открываются в `/report/{id}` (было `/?id=`). Старые `/?id=` закладки больше не работают (осознанно).
 
+## Recent Changes (2026-08-10, structured text extraction: Trafilatura → quality gate → BS4)
+
+**Проблема**: Trafilatura в дефолтном precision-режиме выбрасывал H2-заголовки и резал контент (реальный кейс Росэлторга: HTML имел H1+7 H2 и 6330 символов в `.article-reader`, а `extract` вернул 3740 символов и **0 заголовков**). Для NER это катастрофа — LLM не видит структуру документа.
+
+**Решение — новый модуль `services/text_extraction.py`** (каскад, структура сохраняется):
+1. **Trafilatura** с `favor_recall=True`, `output_format="markdown"`, `include_tables=True`, `include_links=False`, `include_images=False` — recall важнее precision.
+2. **Quality gate** `_assess_quality()` — провал если: (а) `len < 300`; (б) в DOM-кандидате ≥2 H2, а в markdown 0; (в) текст < 50% длины DOM-кандидата. Порог 300 вместо старого 50.
+3. **BS4 structural** — обход DOM-кандидата, превращение в Markdown: `h1..h6→#`, `p→текст`, `ul/ol→- item`, `table→| a | b |` (экранирует `|` в ячейках), `blockquote→>`. Служебные (`nav/footer/header/aside/script/style`) пропускаются.
+4. **raw text** — старый грубый fallback (semantic tags + CSS + `get_text("\n")`), `logger.warning("Extraction degraded...")`.
+
+**DOM-кандидаты** `find_content_candidate()`: каскад `article → [itemprop="articleBody"] → main → .article-content → .post-content → .entry-content → #content` + словарь **`DOMAIN_SELECTORS`** для шаблонов без article/main (`cv.roseltorg.ru: [".article-reader"]` — там article/main в DOM НЕТ). Доменные оверрайды — только доп. приоритет, не единственный путь.
+
+**`PageTextResult`**: `{text, method: trafilatura|bs4_structural|raw_text, char_count, h1_count, h2_count, h3_count, truncated, warnings[]}` — метрики для логирования деградаций, будущего хранения метаданных.
+
+**`serp.py::fetch_page_text()`** стал тонкой обёрткой: скачал HTML → `extract_page_text_from_html(html, url).text`.
+
+**Обрезка до 8000 — только на входе в LLM**: `entity_extractor.py` использует `smart_truncate(text, MAX_PAGE_CHARS)` (режет по блокам `\n\n`, не рвёт предложения). Отчёт хранит **полный** текст страницы (`PageTextResult.truncated` всегда False в оркестраторе).
+
+**Тесты**: `tests/test_text_extraction.py` (9 шт.: каскад селекторов, доменный оверрайд, сохранение заголовков/списков/таблиц, smart_truncate). ВАЖНО: markdown-таблицы в тестах бывают в двух форматах — trafilatura `|---|---|`, bs4 `| --- | --- |`.
+
+**Питфолл после правок extraction**: сбросить `entities_cache` (`DELETE FROM entities_cache;` после kill uvicorn — старые записи вернут сущности из текста без заголовков) и перезапустить uvicorn (без `--reload`).
+
 ## Recent Changes (2026-08-10, deterministic article cleaner)
 
 Новый `services/article_cleaner.py` — детерминированная очистка текста ДО NER (regex, без LLM):

@@ -3,6 +3,7 @@ from openai import AsyncOpenAI
 from config import OPENROUTER_API_KEY, OPENROUTER_BASE_URL, DEFAULT_MODEL, MAX_PAGE_CHARS
 from prompts.default import ENTITY_EXTRACTION_PROMPT
 from db import get_setting
+from services.text_extraction import smart_truncate
 
 
 async def extract_entities(page_text: str, url: str, model: str | None = None) -> list[dict]:
@@ -14,8 +15,8 @@ async def extract_entities(page_text: str, url: str, model: str | None = None) -
     model = model or get_setting("model") or DEFAULT_MODEL
     prompt_template = get_setting("entity_prompt") or ENTITY_EXTRACTION_PROMPT
 
-    # Обрезаем текст до лимита
-    truncated_text = page_text[:MAX_PAGE_CHARS]
+    # Обрезаем текст до лимита (по блокам, а не по символам — не рвём предложения)
+    truncated_text, _ = smart_truncate(page_text, MAX_PAGE_CHARS)
     try:
         prompt = prompt_template.format(page_text=truncated_text)
     except KeyError as e:
