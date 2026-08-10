@@ -13,6 +13,7 @@ from models.schemas import (
 from services.serp import fetch_top20, fetch_page_text
 from services.entity_extractor import extract_entities
 from services.gap_analyzer import analyze_gaps
+from services.article_cleaner import clean_article_text
 from db import (
     create_running_analysis, update_analysis_status,
     complete_analysis, fail_analysis, get_analysis_status,
@@ -243,7 +244,7 @@ async def _run_pipeline(
             update_analysis_status(analysis_id, "analyzing")
             try:
                 if user_text:
-                    report_user_text = user_text.strip()
+                    report_user_text = clean_article_text(user_text.strip())
                     text_hash = hashlib.sha1(report_user_text.encode("utf-8")).hexdigest()[:16]
                     user_entities = await _extract_with_cache(f"user-text://{text_hash}", report_user_text, model)
                 elif url:

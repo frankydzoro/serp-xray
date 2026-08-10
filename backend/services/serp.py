@@ -2,6 +2,7 @@ import httpx
 import asyncio
 import logging
 from config import SERPAPI_API_KEY, DEFAULT_SERP_RESULTS
+from services.article_cleaner import clean_article_text
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +145,7 @@ async def fetch_page_text(url: str, timeout: int = 15) -> str:
             include_links=False,
         )
         if extracted and len(extracted.strip()) > 50:
-            return extracted.strip()
+            return clean_article_text(extracted.strip())
         if extracted:
             logger.warning(
                 "Trafilatura returned short content (%d chars) for %s, falling back to BS4",
@@ -174,4 +175,4 @@ async def fetch_page_text(url: str, timeout: int = 15) -> str:
 
     text = soup.get_text(separator="\n", strip=True)
     lines = [line.strip() for line in text.split("\n") if line.strip()]
-    return "\n".join(lines)
+    return clean_article_text("\n".join(lines))

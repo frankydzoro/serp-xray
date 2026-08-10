@@ -1,7 +1,7 @@
 # AI Memory — SERP X-Ray
 
 > For any AI agent working on this project. Load this file first.
-> Last updated: 2026-08-08 (API + фронтенд architecture refresh)
+> Last updated: 2026-08-10 (article cleaner + API architecture refresh)
 
 ## Project
 
@@ -29,7 +29,7 @@ Backend talks to:
 Analysis runs as a FastAPI `BackgroundTasks` with 5 stages:
 
 1. **searching** — SerpAPI fetch top-20 (Google/Yandex/both)
-2. **fetching** — fetch page text (10 pages per engine, 20 total for 'both')
+2. **fetching** — fetch page text (10 pages per engine, 20 total for 'both'), **детерминированная очистка `clean_article_text()`** в `fetch_page_text()` (удаляет мету/оглавление/теги/кнопки, склеивает `-\n` переносы) — применяется ко всем страницам (user + competitors)
 3. **extracting** — LLM entity extraction per page (with semaphore=5, timeout=30s per call, 24h entity cache, stop-words filter, top-15 cap)
 4. **analyzing** — gap analysis (quick-gaps or LLM, timeout=30s)
 5. **building** — assemble report including Wave 1 Knowledge Graph fields: all_competitor_entities, user_entities, cooccurrence_matrix (pairwise «entity1|entity2» → count), competitor_entity_frequencies, typed_edges (co_occurrence / parent_child detection via description matching)
@@ -52,13 +52,15 @@ Auto-timeout: stuck analyses (20+ min) auto-marked as `failed`.
 │   │   ├── history.py       # History list, detail, delete, bulk-delete
 │   │   └── models.py        # GET /api/models — OpenRouter proxy with cache + filtering
 │   ├── services/
-│   │   ├── serp.py          # SerpAPI: fetch_top20(engine), fetch_page_text()
+│   │   ├── serp.py          # SerpAPI: fetch_top20(engine), fetch_page_text() + clean_article_text()
+│   │   ├── article_cleaner.py  # Детерминированная очистка текста (regex, без LLM) — clean_article_text()
 │   │   ├── entity_extractor.py  # OpenRouter LLM → entities (semaphore=5, 24h cache, stop-words, top-15)
 │   │   └── gap_analyzer.py  # Gap detection: quick-gaps (no URL) + LLM fallback, description enrichment
 │   ├── models/schemas.py    # Pydantic: AnalyzeRequest, GapItem, AnalysisReport, AnalyzeStatus
 │   ├── prompts/default.py   # Default prompts (fallback, overridden via DB)
 │   ├── tests/
-│   │   ├── test_prompts.py  # 28 systematic prompt tests
+│   │   ├── test_article_cleaner.py  # 11 тестов cleaner (мета/оглавление/теги/склейка/кнопки/smoke markdown)
+│   │   ├── test_prompts.py  # 29 systematic prompt tests (запуск: python -m tests.test_prompts, НЕ pytest!)
 │   │   └── prompt-findings.md # Remediation plan (all items completed)
 │   └── venv/                # Python 3.11.15
 ├── frontend/
@@ -301,6 +303,17 @@ PR #3 merged to main (`a8e0b6e`).
 2. **Главная `/` — только форма запуска** — убраны результаты/KPI/граф/поллинг/resume/localStorage (page.tsx −418 строк). После `analyzeQuery` → `router.push('/report/{id}')`.
 3. **Report page — универсальный** — поллинг `getAnalysisStatus` каждые 2с: running→ReportSkeleton, failed→error+Back to History, completed→один `getReport`. Терминальный `settledRef` останавливает поллинг (иначе каждый тик пересоздавал граф).
 4. **History** — running-анализы открываются в `/report/{id}` (было `/?id=`). Старые `/?id=` закладки больше не работают (осознанно).
+
+## Recent Changes (2026-08-10, deterministic article cleaner)
+
+Новый `services/article_cleaner.py` — детерминированная очистка текста ДО NER (regex, без LLM):
+- `clean_article_text()` удаляет: мету в начале (автор/дата/мин чтения, первые 10 строк), оглавление (первые 20, режим `skip_toc_block` по `^\d+\.\s+\w+`), теги/хештеги (последние 10), служебные кнопки **точными матчами** (`^(поделиться|share|...)\s*[.?:：→»›…]*$` — «Поделиться» удалится, «Поделиться опытом внедрения» — нет)
+- Склейка переносов `-\n` → `` через `HYPHEN_BREAK_RE` **до** разбиения на строки (фикс: наивная построчная склейка дублировала следующую строку)
+- Порог: текст < 100 символов возвращается as-is (защита сниппетов/обрывков) — тесты ТЗ с короткими текстами были удлинены до > 100
+- Константы: `META_SCAN_LINES=10`, `TOC_SCAN_LINES=20`, `TAG_SCAN_LINES=10`
+- Интеграция: `fetch_page_text()` (serp.py) — очистка всех страниц (user url + competitors); `analyzer.py` — `user_text` чистится **до** `sha1` (кэш-ключ от канонического текста)
+- При деплое обязателен сброс кэша: `DELETE FROM entities_cache;` (иначе старые записи вернут сущности из неочищенных текстов) + рестарт uvicorn
+- Тесты: `tests/test_article_cleaner.py` (11 шт.) — запуск `./venv/bin/python3 -m pytest tests/test_article_cleaner.py -v`. pytest установлен в venv проекта.
 
 ## Recent Changes (2026-08-08, feat/openrouter-model-search)
 
