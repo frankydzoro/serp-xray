@@ -21,6 +21,7 @@ class AnalyzeStatus(BaseModel):
     id: str
     status: str  # running, completed, failed
     stage: str   # searching, fetching, extracting, analyzing, building, done, error
+    progress: dict = {}  # постраничный прогресс: {pages: [...], user_step, gap_step, ...}
     result: Optional["AnalysisReport"] = None
     error: Optional[str] = None
 

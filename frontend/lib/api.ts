@@ -18,10 +18,34 @@ export async function analyzeQuery(
   return resp.json();
 }
 
+export type PageStep = "pending" | "fetching" | "extracting" | "done" | "failed";
+
+export interface PageProgress {
+  url: string;
+  title: string;
+  position: number;
+  engine: string;
+  step: PageStep;
+  chars: number;
+  entities: number;
+}
+
+export interface AnalysisProgress {
+  pages: PageProgress[];
+  // из progress_meta (только для running; пишется главной корутиной пайплайна)
+  user_step?: "pending" | "extracting" | "done" | "failed" | "skipped";
+  user_entities?: number;
+  gap_step?: "pending" | "running" | "done" | "failed";
+  gap_user_n?: number;
+  gap_competitor_n?: number;
+  gap_count?: number;
+}
+
 export interface AnalysisStatus {
   id: string;
   status: "running" | "completed" | "failed";
   stage: "searching" | "fetching" | "extracting" | "analyzing" | "building" | "done" | "error";
+  progress?: AnalysisProgress;
   result: any | null;
   error: string | null;
 }

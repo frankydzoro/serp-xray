@@ -18,10 +18,14 @@ from db import (
     create_running_analysis, update_analysis_status,
     complete_analysis, fail_analysis, get_analysis_status,
     get_cached_entities, cache_entities, get_setting,
+    register_pages, update_page, set_progress_meta,
 )
 
 router = APIRouter(prefix="/api", tags=["analyzer"])
 SEMAPHORE = asyncio.Semaphore(5)
+
+# Общий дедлайн на gap-анализ: если LLM завис/упал — отчёт собирается с тем, что уже извлечено
+GAP_TIMEOUT_SECONDS = 180
 
 
 async def _extract_with_cache(url: str, text: str, model: str) -> list[dict]:
@@ -58,20 +62,36 @@ async def _run_pipeline(
         logger.info("[%s] Stage: fetching (%d URLs)", analysis_id, page_limit)
         update_analysis_status(analysis_id, "fetching")
 
+        competitors = serp_results[:page_limit]
+
+        # Регистрируем страницы в прогресс-таблице (все — pending),
+        # дальше fetch/extract пишут point-апдейты по своей строке
+        register_pages(analysis_id, [
+            {
+                "url": r["url"],
+                "title": r["title"],
+                "position": r["position"],
+                "engine": r.get("engine", engine),
+            }
+            for r in competitors
+        ])
+
         async def fetch_text(r):
+            update_page(analysis_id, r["url"], step="fetching")
             try:
                 text = await fetch_page_text(r["url"])
+                update_page(analysis_id, r["url"], step="done", chars=len(text))
                 return {
                     "url": r["url"], "title": r["title"], "text": text,
                     "position": r["position"], "engine": r.get("engine", engine),
                 }
             except Exception:
+                update_page(analysis_id, r["url"], step="failed")
                 return {
                     "url": r["url"], "title": r["title"], "text": r["snippet"],
                     "position": r["position"], "engine": r.get("engine", engine),
                 }
 
-        competitors = serp_results[:page_limit]
         pages = await asyncio.gather(*(fetch_text(r) for r in competitors))
 
         # Сохраняем тексты конкурентов для отчёта
@@ -92,7 +112,16 @@ async def _run_pipeline(
 
         async def extract_for_page(p):
             async with SEMAPHORE:
-                entities = await _extract_with_cache(p["url"], p["text"], model)
+                update_page(analysis_id, p["url"], step="extracting")
+                try:
+                    entities = await _extract_with_cache(p["url"], p["text"], model)
+                    update_page(analysis_id, p["url"], step="done", entities=len(entities))
+                except Exception as e:
+                    # Одна упавшая/зависшая страница не должна ронять весь анализ:
+                    # пропускаем её, отчёт строится по остальным страницам
+                    logger.warning("[%s] Entity extraction failed for %s: %s", analysis_id, p["url"], e)
+                    entities = []
+                    update_page(analysis_id, p["url"], step="failed")
                 return {"url": p["url"], "title": p["title"], "position": p["position"], "entities": entities}
 
         page_entities = await asyncio.gather(*(extract_for_page(p) for p in pages))
@@ -242,6 +271,7 @@ async def _run_pipeline(
         report_user_text = ""
         if url or user_text:
             update_analysis_status(analysis_id, "analyzing")
+            set_progress_meta(analysis_id, {"user_step": "extracting"})
             try:
                 if user_text:
                     report_user_text = clean_article_text(user_text.strip())
@@ -250,8 +280,11 @@ async def _run_pipeline(
                 elif url:
                     report_user_text = await fetch_page_text(url)
                     user_entities = await _extract_with_cache(url, report_user_text, model)
+                set_progress_meta(analysis_id, {"user_step": "done", "user_entities": len(user_entities)})
             except Exception:
-                pass
+                set_progress_meta(analysis_id, {"user_step": "failed"})
+        else:
+            set_progress_meta(analysis_id, {"user_step": "skipped"})
 
         # ── Wave 1.1: user_entities для фронтенда ──
         user_entities_list = [
@@ -269,7 +302,27 @@ async def _run_pipeline(
         logger.info("[%s] Stage: analyzing gaps (user_entities=%d, competitor_entities=%d)",
                      analysis_id, len(user_entities), len(competitor_entities))
         update_analysis_status(analysis_id, "analyzing")
-        gaps = await analyze_gaps(user_entities, competitor_entities, model, query)
+        set_progress_meta(analysis_id, {
+            "gap_step": "running",
+            "gap_user_n": len(user_entities),
+            "gap_competitor_n": len(competitor_entities),
+        })
+        try:
+            gaps = await asyncio.wait_for(
+                analyze_gaps(user_entities, competitor_entities, model, query),
+                timeout=GAP_TIMEOUT_SECONDS,
+            )
+            set_progress_meta(analysis_id, {"gap_step": "done", "gap_count": len(gaps)})
+        except Exception as e:
+            # Если gap-анализ завис или упал (сеть/LLM) — НЕ роняем анализ:
+            # сохраняем отчёт с тем, что уже извлечено (сущности, граф, coverage)
+            logger.exception(
+                "[%s] Gap analysis failed (timeout=%ds): %s; building report with available data",
+                analysis_id, GAP_TIMEOUT_SECONDS, e,
+            )
+            gaps = []
+            set_progress_meta(analysis_id, {"gap_step": "failed"})
+        logger.info("[%s] Gap analysis returned %d gaps", analysis_id, len(gaps))
 
         # ── Wave 1.2: enrichment gaps частотой ──
         for g in gaps:
@@ -381,6 +434,7 @@ async def get_status(analysis_id: str):
         id=data["id"],
         status=data.get("status", "running"),
         stage=data.get("stage", "unknown"),
+        progress=data.get("progress", {}),
         result=result,
         error=data.get("result_json", {}).get("error") if data.get("status") == "failed" else None,
     )

@@ -31,10 +31,10 @@ Analysis runs as a FastAPI `BackgroundTasks` with 5 stages:
 1. **searching** — SerpAPI fetch top-20 (Google/Yandex/both)
 2. **fetching** — fetch page text (10 pages per engine, 20 total for 'both'), **детерминированная очистка `clean_article_text()`** в `fetch_page_text()` (удаляет мету/оглавление/теги/кнопки, склеивает `-\n` переносы) — применяется ко всем страницам (user + competitors)
 3. **extracting** — LLM entity extraction per page (with semaphore=5, timeout=30s per call, 24h entity cache, stop-words filter, top-15 cap)
-4. **analyzing** — gap analysis (quick-gaps or LLM, timeout=30s)
+4. **analyzing** — ДВА последовательных LLM-шага: (a) сущности страницы пользователя (URL или pasted text), (b) gap analysis (quick-gaps or LLM, timeout=30s; общий дедлайн `GAP_TIMEOUT_SECONDS=180`, при фейле `gaps=[]` — отчёт строится без gaps)
 5. **building** — assemble report including Wave 1 Knowledge Graph fields: all_competitor_entities, user_entities, cooccurrence_matrix (pairwise «entity1|entity2» → count), competitor_entity_frequencies, typed_edges (co_occurrence / parent_child detection via description matching)
 
-Each stage updates `stage` column in DB. Frontend polls `GET /api/analyze/{id}/status` every 2s.  
+Each stage updates `stage` column in DB. **Per-page progress** (fetch/extract) пишется в таблицу `analysis_pages` point-апдейтами (без read-modify-write), метаданные user_page/gap — в `progress_meta`. Frontend polls `GET /api/analyze/{id}/status` every 2s, ответ содержит `progress: {pages: [...], user_step, gap_step, ...}`.  
 Auto-timeout: stuck analyses (20+ min) auto-marked as `failed`.  
 **Logging**: each stage logged with `logger.info()` including analysis_id and key metrics.
 
@@ -100,7 +100,8 @@ CREATE TABLE analyses (
     model_used TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'running',
     stage TEXT NOT NULL DEFAULT 'searching',
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    -- … + rewritten_*, rewrite_* (см. Rewrite Article), progress_meta TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE settings (
@@ -113,6 +114,20 @@ CREATE TABLE entities_cache (
     entities_json TEXT NOT NULL,
     extracted_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Постраничный прогресс анализа (point-апдейты из конкурентных корутин; race-free по PK)
+CREATE TABLE analysis_pages (
+    analysis_id TEXT NOT NULL,
+    url TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    position INTEGER NOT NULL DEFAULT 0,
+    engine TEXT NOT NULL DEFAULT '',
+    step TEXT NOT NULL DEFAULT 'pending',   -- pending → fetching → done|failed → extracting → done|failed
+    chars INTEGER NOT NULL DEFAULT 0,       -- длина текста (fetch-done)
+    entities INTEGER NOT NULL DEFAULT 0,    -- число сущностей (extract-done)
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (analysis_id, url)
+);
 ```
 
 ### Status values
@@ -123,13 +138,17 @@ CREATE TABLE entities_cache (
 ### Stage values
 - `searching` → `fetching` → `extracting` → `analyzing` → `building` → `done`
 - `error` — terminal failure
+- На `fetching`/`extracting` плюс к stage пишется **постраничный прогресс** в `analysis_pages`; на `analyzing` — `progress_meta` (`user_step`, затем `gap_step`). Фронт показывает на `fetching/extracting` лист статей, на `analyzing` — две строки (Your page / Gap analysis).
 
 ### DB Functions
 - `create_running_analysis(id, query, model, url)` — inserts with status=running
 - `update_analysis_status(id, stage)` — updates stage only
+- `register_pages(id, pages)` — INSERT OR IGNORE страницы (все pending)
+- `update_page(id, url, step=, chars=, entities=)` — point-апдейт строки analysis_pages (без read-modify-write)
+- `set_progress_meta(id, dict)` — merge-апдейт progress_meta (только из главной корутины между gather — гонок нет)
 - `complete_analysis(id, result)` — saves result, sets status=completed
 - `fail_analysis(id, error)` — sets status=failed, stage=error
-- `get_analysis_status(id)` — returns status/stage, auto-timeouts after 20min
+- `get_analysis_status(id)` — returns status/stage/**progress** (`{pages, user_step, gap_step, ...}`), auto-timeouts after 20min
 - `save_analysis(id, query, result, model, url)` — legacy compat, delegates to complete_analysis
 
 ## API Endpoints
@@ -344,3 +363,25 @@ PR #3 merged to main (`a8e0b6e`).
 12. **Pipeline timeout at 10min** — deepseek-v4-pro can be slow (30-40s per extraction). 20 pages × 30-40s ÷ semaphore 5 = 120-160s. Increased to 20min, reduced OpenRouter timeout to 30s.
 13. **Backend changes need MANUAL uvicorn restart** — backend runs WITHOUT `--reload` (reloader breaks imports, changes cwd to /tmp). After editing any backend file: kill the old uvicorn process, then `./venv/bin/python3 -m uvicorn main:app --host 0.0.0.0 --port 8000` (background). Symptom of stale backend: API works but new fields/logic missing (e.g. `competitor_pages[].entities` empty while entities_found > 0).
 14. **`provider.require_parameters` для JSON** (изучено 2026-08-10) — `response_format={"type":"json_object"}` уже стоит в entity_extractor/gap_analyzer, НО OpenRouter по умолчанию может роутить на эндпоинт, игнорирующий параметр (Claude и др.) → модель возвращает ```json фенсы → json.loads падает. Фикс: `provider={"require_parameters": True}` + defensive-парсер (strip фенсов). Полная выжимка — в скилле openrouter-api (секция «Structured outputs / JSON Schema»).
+15. **OpenRouter + VPN (eXpress) → «полумёртвое» соединение** (2026-08-10) — TCP ESTABLISHED к CF-IP openrouter.ai, данные не идут, процесс не ест CPU (симптом: анализ висит в `running/extracting` минутами; `lsof -nP -p <pid> -i` показывает ESTABLISHED к 104.18.x.x). SDK-таймаут `timeout=30` — per-operation, не общий дедлайн, поэтому спасает не всегда. Решение: `asyncio.wait_for(..., timeout=GAP_TIMEOUT_SECONDS=180)` вокруг gap-анализа + fallback `gaps=[]`, и try/except в `extract_for_page` (упавшая страница пропускается, отчёт строится по остальным). Диагностика: `sample <pid> 2`, `lsof`, `curl -m 10 https://openrouter.ai/api/v1/models`.
+16. **`progress` надо пробрасывать в AnalyzeStatus в роутере** (2026-08-10) — `get_analysis_status()` (db) возвращает `d["progress"]`, но если в `routers/analyzer.py::get_status` НЕ передать `progress=data.get("progress", {})` — API вернёт пустой прогресс при полной таблице `analysis_pages` (симптом: `/status` отдаёт `pages: []`, а `sqlite3 ... SELECT * FROM analysis_pages` полон). Pydantic-дефолт `{}` молча прячет баг.
+17. **Resilience-тесты трогают реальную БД после добавления db-вызовов в пайплайн** (2026-08-10) — как только `_run_pipeline` начал звать `register_pages`/`update_page`/`set_progress_meta`, `test_analyzer_resilience.py` упал с `no such table: analysis_pages` (продакшн-БД без миграции). Чинить: замокать эти три функции в `_patch_base` (не относятся к устойчивости).
+
+## Recent Changes (2026-08-10, per-page analysis progress)
+
+«Analyzing gaps..» висел невидимкой до ~4 мин: плоский `stage` скрывал (а) весь `extracting` (10-20 LLM-вызовов) и (б) внутри `analyzing` два последовательных LLM-вызова. По запросу пользователя сделана **прозрачность прогресса** (не ускорение).
+
+- **Решение — БЕЗ JSON-блоба для страниц** (user-enforced): с семафором 5 корутины делали бы читай-модифицируй-пиши одного поля → потерянные апдейты (застрявшие `pending` = тот же UX-баг в другом месте). Вместо этого `analysis_pages` (PK `analysis_id+url`): каждая корутина point-UPDATE своей строки — race-free по конструкции. Метаданные `user_page`/`gap` — в `analyses.progress_meta` (JSON; пишутся только из главной корутины между gather — гонок нет).
+- `db.py`: `register_pages`, `update_page(id,url,step=,chars=,entities=)`, `set_progress_meta(id,dict)`; `get_analysis_status` собирает `progress={pages, ...meta}` (pages по порядку position).
+- `routers/analyzer.py`: регистрация страниц после searching; `fetch_text` → `fetching`→`done(chars)|failed`; `extract_for_page` → `extracting`→`done(entities)|failed`; user-страница → `user_step` extracting/done/failed/skipped + `user_entities`; gap → `gap_step` running/done/failed + `gap_user_n`/`gap_competitor_n`/`gap_count`.
+- `schemas.py`/`routers`: `AnalyzeStatus.progress: dict = {}`, проброс в `get_status` (см. pitfall 16).
+- Frontend: `AnalysisProgress`/`PageProgress` в `lib/api.ts`; `ReportSkeleton` на `fetching/extracting` — dense-лист статей (`#pos · hostname — title` + спиннер / ✓ N entities / ✗ failed, `Pages — 8/9`), на `analyzing` — StepRow'ы «Your page entities — N extracted» и «Gap analysis — comparing N competitor vs M user entities»; прогресс-бар учитывает долю готовых страниц. `report/[id]/page.tsx` хранит `progress` из каждого полла.
+- Тесты: `tests/test_progress.py` (17 passed всего). E2E вживую подтверждён (search→fetch→extract→analyze→completed) + UI показал лист статей и разведённые gap-шаги. tsc чист. Бэкенд перезапущен, миграции применены (таблица + колонка на месте).
+
+## Recent Changes (2026-08-10, resilient pipeline: gap fallback)
+
+При зависании/сбое LLM-вызовов анализ больше НЕ падает в `failed` — отчёт собирается с тем, что уже извлечено:
+- **`analyzer.py`**: `GAP_TIMEOUT_SECONDS = 180`; `analyze_gaps` обёрнут в `asyncio.wait_for` + `except → gaps=[]` (лог `[id] Gap analysis failed ... building report with available data`). UI получит completed-отчёт: сущности, граф, coverage, но пустые gaps/checklist.
+- **`analyzer.py`**: `extract_for_page` обёрнут в try/except — одна упавшая/зависшая страница пропускается (`entities=[]`), остальные извлекаются.
+- Кэш `entities_cache` не сбрасывается при рестарте — повторный анализ подхватит уже извлечённые страницы мгновенно.
+- Тесты: `tests/test_analyzer_resilience.py` (2 шт., моки без LLM): `test_gap_failure_still_builds_report`, `test_extract_failure_skips_only_broken_page`. Прогон: `./venv/bin/python3 -m pytest tests/ -q` → 15 passed (1 pre-existing error в test_prompts.py: хелпер назван `def test()` — pytest считает его тестом с фикстурой `name`; не трогать, файл жжёт реальные LLM-вызовы).

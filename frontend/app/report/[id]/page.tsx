@@ -13,6 +13,7 @@ import Checklist from "@/components/Checklist";
 import RewriteModal from "@/components/RewriteModal";
 import ReportSkeleton from "@/components/ReportSkeleton";
 import { getAnalysisStatus, getReport } from "@/lib/api";
+import type { AnalysisProgress } from "@/lib/api";
 import { downloadMarkdown, downloadPDF } from "@/lib/export";
 
 function KpiInline({
@@ -66,6 +67,7 @@ export default function ReportPage() {
   const { id } = useParams<{ id: string }>();
   const [view, setView] = useState<"loading" | "running" | "completed" | "failed">("loading");
   const [stage, setStage] = useState("searching");
+  const [progress, setProgress] = useState<AnalysisProgress | undefined>(undefined);
   const [report, setReport] = useState<any>(null);
   const [error, setError] = useState("");
   // Терминальное состояние: после completed/failed поллинг останавливается,
@@ -87,6 +89,7 @@ export default function ReportPage() {
         if (s.status === "running") {
           setView("running");
           setStage(s.stage);
+          setProgress(s.progress);
         } else if (s.status === "failed") {
           settledRef.current = true;
           setView("failed");
@@ -133,7 +136,7 @@ export default function ReportPage() {
   if (view === "running")
     return (
       <div className="space-y-6">
-        <ReportSkeleton analysisId={id || "pending"} stage={stage} />
+        <ReportSkeleton analysisId={id || "pending"} stage={stage} progress={progress} />
         <div className="bg-card rounded-xl border border-primary/30 p-4 shadow-card animate-pulse">
           <div className="flex items-center justify-between">
             <div>

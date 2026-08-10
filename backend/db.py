@@ -40,6 +40,21 @@ def init_db():
             extracted_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
+        -- Постраничный прогресс анализа: point-апдейты из конкурентных корутин,
+        -- race condition невозможен — каждая строка обновляется только своей корутиной
+        CREATE TABLE IF NOT EXISTS analysis_pages (
+            analysis_id TEXT NOT NULL,
+            url TEXT NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            position INTEGER NOT NULL DEFAULT 0,
+            engine TEXT NOT NULL DEFAULT '',
+            step TEXT NOT NULL DEFAULT 'pending',
+            chars INTEGER NOT NULL DEFAULT 0,
+            entities INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (analysis_id, url)
+        );
+
         -- Индексы
         CREATE INDEX IF NOT EXISTS idx_analyses_created
             ON analyses(created_at DESC);
@@ -76,6 +91,12 @@ def init_db():
         conn.execute("ALTER TABLE analyses ADD COLUMN rewrite_started_at TEXT NOT NULL DEFAULT ''")
     except sqlite3.OperationalError:
         pass
+    try:
+        # Метаданные прогресса (user_page / gap). Пишется ТОЛЬКО из главной корутины
+        # пайплайна между стадиями — конкурентности нет, поэтому JSON безопасен.
+        conn.execute("ALTER TABLE analyses ADD COLUMN progress_meta TEXT NOT NULL DEFAULT '{}'")
+    except sqlite3.OperationalError:
+        pass
 
     conn.commit()
     conn.close()
@@ -107,6 +128,79 @@ def update_analysis_status(analysis_id: str, stage: str) -> None:
     conn.close()
 
 
+def register_pages(analysis_id: str, pages: list[dict]) -> None:
+    """Регистрирует страницы-конкуренты со статусом pending (до fetch/execute)."""
+    conn = get_connection()
+    conn.executemany(
+        """INSERT OR IGNORE INTO analysis_pages
+           (analysis_id, url, title, position, engine, step)
+           VALUES (?, ?, ?, ?, ?, 'pending')""",
+        [
+            (
+                analysis_id,
+                p["url"],
+                p.get("title", ""),
+                p.get("position", 0),
+                p.get("engine", ""),
+            )
+            for p in pages
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_page(
+    analysis_id: str,
+    url: str,
+    step: str | None = None,
+    chars: int | None = None,
+    entities: int | None = None,
+) -> None:
+    """Point-апдейт одной строки analysis_pages. Без read-modify-write."""
+    sets = ["updated_at = datetime('now')"]
+    params: list = []
+    if step is not None:
+        sets.append("step = ?")
+        params.append(step)
+    if chars is not None:
+        sets.append("chars = ?")
+        params.append(chars)
+    if entities is not None:
+        sets.append("entities = ?")
+        params.append(entities)
+    params += [analysis_id, url]
+    conn = get_connection()
+    conn.execute(
+        f"UPDATE analysis_pages SET {', '.join(sets)} WHERE analysis_id = ? AND url = ?",
+        params,
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_progress_meta(analysis_id: str, meta: dict) -> None:
+    """Обновляет progress_meta (user_page / gap). Безопасно: вызывается только
+    из главной корутины пайплайна (после asyncio.gather), гонок нет."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT progress_meta FROM analyses WHERE id = ?", (analysis_id,)
+    ).fetchone()
+    current = {}
+    if row and row["progress_meta"]:
+        try:
+            current = json.loads(row["progress_meta"])
+        except json.JSONDecodeError:
+            current = {}
+    current.update(meta)
+    conn.execute(
+        "UPDATE analyses SET progress_meta = ? WHERE id = ?",
+        (json.dumps(current, ensure_ascii=False), analysis_id),
+    )
+    conn.commit()
+    conn.close()
+
+
 def complete_analysis(analysis_id: str, result: dict) -> None:
     """Завершает анализ: сохраняет результат, ставит status=completed."""
     conn = get_connection()
@@ -130,10 +224,10 @@ def fail_analysis(analysis_id: str, error: str) -> None:
 
 
 def get_analysis_status(analysis_id: str, timeout_minutes: int = 20) -> dict | None:
-    """Возвращает статус и stage анализа. Автоматически помечает как failed при таймауте."""
+    """Возвращает статус, stage и прогресс анализа. Автоматически помечает как failed при таймауте."""
     conn = get_connection()
     row = conn.execute(
-        "SELECT id, status, stage, result_json, created_at FROM analyses WHERE id = ?",
+        "SELECT id, status, stage, result_json, created_at, progress_meta FROM analyses WHERE id = ?",
         (analysis_id,),
     ).fetchone()
     if not row:
@@ -144,6 +238,21 @@ def get_analysis_status(analysis_id: str, timeout_minutes: int = 20) -> dict | N
         d["result_json"] = json.loads(d["result_json"])
     except (json.JSONDecodeError, KeyError):
         d["result_json"] = {}
+
+    # Постраничный прогресс: статьи + метаданные (user_page / gap)
+    pages = conn.execute(
+        """SELECT url, title, position, engine, step, chars, entities
+           FROM analysis_pages
+           WHERE analysis_id = ? ORDER BY position ASC""",
+        (analysis_id,),
+    ).fetchall()
+    meta = {}
+    try:
+        meta = json.loads(d.get("progress_meta") or "{}")
+    except json.JSONDecodeError:
+        meta = {}
+    d["progress"] = {"pages": [dict(p) for p in pages], **meta}
+    d.pop("progress_meta", None)
 
     # Таймаут для застрявших анализов
     if d["status"] == "running":
