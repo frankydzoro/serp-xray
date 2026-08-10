@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import GapGraph from "@/components/GapGraph";
 import GapCard from "@/components/GapCard";
+import CompetitorEntities from "@/components/CompetitorEntities";
 import Checklist from "@/components/Checklist";
 import RewriteModal from "@/components/RewriteModal";
 import ReportSkeleton from "@/components/ReportSkeleton";
@@ -270,6 +271,21 @@ export default function ReportPage() {
           </CardContent>
         </Card>
       </section>
+
+      {/* Competitor results — аккордеон URL → сущности (диагностика пустых страниц) */}
+      {data.competitor_pages?.length > 0 && (
+        <section>
+          <SectionHeading
+            title="Competitor Results"
+            badge={`${data.competitor_pages.length}`}
+          />
+          <Card className="shadow-card border-border/60">
+            <CardContent className="p-4">
+              <CompetitorEntities pages={data.competitor_pages} />
+            </CardContent>
+          </Card>
+        </section>
+      )}
 
       {/* Checklist */}
       {data.checklist?.length > 0 && (

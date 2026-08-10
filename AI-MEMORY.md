@@ -172,7 +172,7 @@ CREATE TABLE entities_cache (
 - `user_entity_coverage`, `competitor_entity_coverage` — coverage % (0-100)
 - `gaps` — GapItem[] (max 20: entity, entity_type, found_in_competitors, found_in_user_page, priority, recommendation, competitor_description, found_on_urls)
 - `checklist` — actionable items (string[])
-- `competitor_pages` — CompetitorPage[] (url, title, position, engine, text)
+- `competitor_pages` — CompetitorPage[] (url, title, position, engine, text, **entities**) — entities = постраничные сущности, привязка из `page_entities` в `analyzer.py` (мапа url→entities); пустая страница = текст вытащился, а NER не сработал
 - `user_page_text` — raw text of analyzed user page
 
 ### Wave 1 — Knowledge Graph fields
@@ -281,6 +281,14 @@ generation continues on the server even if the browser tab is closed.
 **LLM timeout**: 180s per rewrite call (article + gaps is a big task; vs 30s for extraction).
 Model: `rewrite_model` setting (Admin → Rewrite Article tab), prompts: `rewrite_system_prompt`/`rewrite_user_prompt`.
 
+## Recent Changes (2026-08-10, competitor results accordion)
+
+5. **Competitor Results аккордеон** — новая секция на `/report/[id]` между Content Gaps и Checklist:
+   - `CompetitorEntities.tsx` — аккордеон URL → сущности: `#позиция · engine · title` + бейдж «N entities»
+   - Пустые страницы (0 сущностей) — красный бейдж «0 entities» + предупреждение сверху «⚠ N of M pages have 0 entities» (диагностика: текст вытащился, NER не сработал)
+   - Backend: `CompetitorPage.entities: list[dict] = []` (schemas.py) + привязка постраничных сущностей в `analyzer.py` (после `page_entities = gather(...)` — мапа url→entities)
+   - Старые отчёты в БД entities не содержат (покажут «0 entities»)
+
 ## Recent Changes (2026-08-10, bipartite gap graph + report-only results)
 
 PR #3 merged to main (`a8e0b6e`).
@@ -321,3 +329,5 @@ PR #3 merged to main (`a8e0b6e`).
 10. **SQLite gets `database is locked`** if CLI and backend access DB simultaneously. Kill backend before running `sqlite3` CLI directly.
 11. **Empty competitor_description** — LLM may return gaps without descriptions. Fixed with `_find_entity_description()` enrichment in `gap_analyzer.py` + fallback in `entity_extractor.py`. Three-tier chain: LLM → competitor data → generated.
 12. **Pipeline timeout at 10min** — deepseek-v4-pro can be slow (30-40s per extraction). 20 pages × 30-40s ÷ semaphore 5 = 120-160s. Increased to 20min, reduced OpenRouter timeout to 30s.
+13. **Backend changes need MANUAL uvicorn restart** — backend runs WITHOUT `--reload` (reloader breaks imports, changes cwd to /tmp). After editing any backend file: kill the old uvicorn process, then `./venv/bin/python3 -m uvicorn main:app --host 0.0.0.0 --port 8000` (background). Symptom of stale backend: API works but new fields/logic missing (e.g. `competitor_pages[].entities` empty while entities_found > 0).
+14. **`provider.require_parameters` для JSON** (изучено 2026-08-10) — `response_format={"type":"json_object"}` уже стоит в entity_extractor/gap_analyzer, НО OpenRouter по умолчанию может роутить на эндпоинт, игнорирующий параметр (Claude и др.) → модель возвращает ```json фенсы → json.loads падает. Фикс: `provider={"require_parameters": True}` + defensive-парсер (strip фенсов). Полная выжимка — в скилле openrouter-api (секция «Structured outputs / JSON Schema»).
