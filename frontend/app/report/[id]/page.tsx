@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import EntityGraph from "@/components/EntityGraph";
+import GapGraph from "@/components/GapGraph";
 import GapCard from "@/components/GapCard";
 import Checklist from "@/components/Checklist";
 import RewriteModal from "@/components/RewriteModal";
-import { getReport } from "@/lib/api";
+import ReportSkeleton from "@/components/ReportSkeleton";
+import { getAnalysisStatus, getReport } from "@/lib/api";
 import { downloadMarkdown, downloadPDF } from "@/lib/export";
 
 function KpiInline({
@@ -59,87 +60,123 @@ function SectionHeading({ title, badge }: { title: string; badge?: string }) {
   );
 }
 
+/* ── Main page ────────────────────────────── */
 export default function ReportPage() {
   const { id } = useParams<{ id: string }>();
+  const [view, setView] = useState<"loading" | "running" | "completed" | "failed">("loading");
+  const [stage, setStage] = useState("searching");
   const [report, setReport] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  // Терминальное состояние: после completed/failed поллинг останавливается,
+  // чтобы не пересобирать отчёт и граф каждые 2с
+  const settledRef = useRef(false);
 
+  // Poll while running, fetch full report once completed
   useEffect(() => {
-    getReport(id)
-      .then(setReport)
-      .finally(() => setLoading(false));
+    if (!id) return;
+    let active = true;
+    settledRef.current = false;
+
+    const poll = async () => {
+      // Completed/failed — stop polling
+      if (!active || settledRef.current) return;
+      try {
+        const s = await getAnalysisStatus(id);
+        if (!active) return;
+        if (s.status === "running") {
+          setView("running");
+          setStage(s.stage);
+        } else if (s.status === "failed") {
+          settledRef.current = true;
+          setView("failed");
+          setError(s.error || "Analysis failed");
+        } else {
+          // completed — fetch full report once, then stop
+          settledRef.current = true;
+          setView("loading");
+          const full = await getReport(id).catch(() => null);
+          if (!active) return;
+          if (full) {
+            setReport(full);
+            setView("completed");
+          } else {
+            setView("failed");
+            setError("Report not found");
+          }
+        }
+      } catch (err: any) {
+        if (!active) return;
+        settledRef.current = true;
+        setError(err.message || "Connection lost");
+        setView("failed");
+      }
+    };
+
+    poll();
+    const interval = setInterval(poll, 2000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, [id]);
 
-  if (loading)
+  /* ── Loading ── */
+  if (view === "loading")
     return (
       <div className="flex items-center justify-center py-20">
         <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
       </div>
     );
 
-  if (!report)
+  /* ── Running ── */
+  if (view === "running")
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <p className="text-lg font-semibold text-foreground mb-1">Report not found</p>
-        <p className="text-sm text-muted-foreground mb-4">This analysis may have been deleted.</p>
-        <Link
-          href="/history"
-          className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground hover:bg-muted transition-colors"
-        >
-          Back to History
-        </Link>
+      <div className="space-y-6">
+        <ReportSkeleton analysisId={id || "pending"} stage={stage} />
+        <div className="bg-card rounded-xl border border-primary/30 p-4 shadow-card animate-pulse">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-foreground truncate max-w-[300px]">
+                Analysis in progress
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-0.5 font-mono">{id}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-primary animate-pulse" />
+              <span className="text-xs font-medium text-primary capitalize">{stage}</span>
+            </div>
+          </div>
+        </div>
       </div>
     );
 
-  const data = report.result_json || {};
-  const gapCount = data.gaps?.length ?? 0;
+  /* ── Failed ── */
+  if (view === "failed")
+    return (
+      <div className="max-w-4xl mx-auto">
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardContent className="p-6">
+            <div className="flex items-start gap-3">
+              <span className="text-destructive text-lg font-bold leading-none mt-0.5">!</span>
+              <div>
+                <p className="text-sm font-semibold text-destructive">Analysis failed</p>
+                <p className="text-sm text-muted-foreground mt-0.5">{error}</p>
+                <Link
+                  href="/history"
+                  className="text-sm font-medium text-primary hover:underline inline-block mt-4"
+                >
+                  ← Back to History
+                </Link>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
 
-  // Wave 1: сборка entities для графа из трёх источников
-  const userEntities = (data.user_entities || []).map((e: any) => ({
-    name: e.name,
-    type: e.type || "Concept",
-    confidence: e.confidence || 0.5,
-    frequency: 1,
-    owner: "user" as const,
-    isGap: false,
-    description: e.description || "",
-    source_urls: e.source_urls || [],
-  }));
-  const competitorEntities = (data.all_competitor_entities || []).map((e: any) => ({
-    name: e.name,
-    type: e.type || "Concept",
-    confidence: e.adjusted_confidence || e.confidence || 0.5,
-    frequency: e.frequency || 1,
-    owner: "competitor" as const,
-    isGap: false,
-    description: e.description || "",
-    source_urls: e.source_urls || [],
-  }));
-  const gapEntities = (data.gaps || []).map((g: any) => ({
-    name: g.entity,
-    type: g.entity_type || "Concept",
-    confidence: g.confidence ?? (g.priority === "critical" ? 1.0 : g.priority === "high" ? 0.8 : 0.5),
-    frequency: g.frequency || 1,
-    owner: "gap" as const,
-    isGap: true,
-    priority: g.priority,
-    description: g.competitor_description || "",
-    source_urls: (g.found_on_urls || []).map((u: any) => u.url || u),
-  }));
-  // Merge: gap → competitor → user (unique by name)
-  const seen = new Set<string>();
-  const allEntitiesForGraph: any[] = [];
-  for (const e of gapEntities) {
-    if (!seen.has(e.name.toLowerCase())) { seen.add(e.name.toLowerCase()); allEntitiesForGraph.push(e); }
-  }
-  for (const e of competitorEntities) {
-    if (!seen.has(e.name.toLowerCase())) { seen.add(e.name.toLowerCase()); allEntitiesForGraph.push(e); }
-  }
-  for (const e of userEntities) {
-    if (!seen.has(e.name.toLowerCase())) { seen.add(e.name.toLowerCase()); allEntitiesForGraph.push(e); }
-  }
-  const cooccurrenceFromReport = data.cooccurrence_matrix || {};
-  const typedEdgesFromReport = data.typed_edges || [];
+  /* ── Completed ── */
+  const data = report?.result_json || {};
+  const gapCount = data.gaps?.length ?? 0;
 
   const handleExport = async (format: "md" | "pdf") => {
     const rd = {
@@ -204,13 +241,13 @@ export default function ReportPage() {
         </div>
       </div>
 
-      {/* Entity Graph */}
-      {allEntitiesForGraph.length > 0 && (
+      {/* Entity Graph — только gap-сущности, привязанные к конкурентам */}
+      {gapCount > 0 && (
         <section>
-          <SectionHeading title="Entity Graph" badge={`${allEntitiesForGraph.length}`} />
+          <SectionHeading title="Entity Graph" badge={`${gapCount}`} />
           <Card className="shadow-card border-border/60">
             <CardContent className="p-4">
-              <EntityGraph entities={allEntitiesForGraph} cooccurrence={cooccurrenceFromReport} typedEdges={typedEdgesFromReport} showFilter />
+              <GapGraph gaps={data.gaps || []} />
             </CardContent>
           </Card>
         </section>
@@ -222,7 +259,7 @@ export default function ReportPage() {
         <Card className="shadow-card border-border/60">
           <CardContent className="p-4 space-y-3">
             <GapCard gaps={data.gaps || []} />
-            {data.gaps?.length > 0 && data.user_page_text && (
+            {gapCount > 0 && data.user_page_text && (
               <RewriteModal
                 articleText={data.user_page_text}
                 gaps={data.gaps}
@@ -241,6 +278,64 @@ export default function ReportPage() {
           <Card className="shadow-card border-border/60">
             <CardContent className="p-4">
               <Checklist items={data.checklist} />
+            </CardContent>
+          </Card>
+        </section>
+      )}
+
+      {/* Competitor pages */}
+      {data.competitor_pages?.length > 0 && (
+        <section>
+          <SectionHeading title="Competitor Pages" badge={`${data.competitor_pages.length}`} />
+          <div className="space-y-4">
+            {data.competitor_pages.map((p: any, i: number) => (
+              <Card key={i} className="shadow-card border-border/60">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[11px] font-bold text-muted-foreground bg-secondary px-2 py-0.5 rounded">
+                      #{p.position}
+                    </span>
+                    <span className="text-[11px] font-medium text-muted-foreground uppercase">
+                      {p.engine}
+                    </span>
+                    <a
+                      href={p.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-semibold text-primary hover:underline truncate"
+                    >
+                      {p.title || p.url}
+                    </a>
+                  </div>
+                  <details>
+                    <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+                      View full text
+                    </summary>
+                    <pre className="mt-2 text-xs text-muted-foreground whitespace-pre-wrap max-h-96 overflow-y-auto bg-muted/50 rounded-lg p-3">
+                      {p.text}
+                    </pre>
+                  </details>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* User page text */}
+      {data.user_page_text && (
+        <section>
+          <SectionHeading title="Your Page Text" />
+          <Card className="shadow-card border-border/60">
+            <CardContent className="p-4">
+              <details>
+                <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+                  View full text
+                </summary>
+                <pre className="mt-2 text-xs text-muted-foreground whitespace-pre-wrap max-h-96 overflow-y-auto bg-muted/50 rounded-lg p-3">
+                  {data.user_page_text}
+                </pre>
+              </details>
             </CardContent>
           </Card>
         </section>
