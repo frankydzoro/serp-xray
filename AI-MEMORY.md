@@ -9,9 +9,8 @@ SERP X-Ray — local web tool for competitive SERP entity analysis.
 Takes a search query → fetches top-20 via SerpAPI (Google/Yandex/both) → extracts Knowledge Graph entities via OpenRouter LLM → compares against user's page → builds gap graph + prioritized checklist.
 
 **Path:** `~/serp-xray/`  
-**Git:** branch `feat/openrouter-model-search`, 5 modified files, 3 commits ahead of main
-**Owner:** Petr Grishechkin, SEO specialist, Russian-speaking, prefers English UI  
-**No remote configured** — `git remote` is empty.
+**Git:** branch `main` (PR workflow через GitHub, remote `frankydzoro/serp-xray`)
+**Owner:** Petr Grishechkin, SEO specialist, Russian-speaking, prefers English UI
 
 ## Architecture
 
@@ -65,13 +64,14 @@ Auto-timeout: stuck analyses (20+ min) auto-marked as `failed`.
 ├── frontend/
 │   ├── app/                 # Next.js App Router
 │   │   ├── layout.tsx       # Root layout with AppNav
-│   │   ├── page.tsx         # Main: QueryForm + tabs (overview/graph/gaps/checklist) + polling
+│   │   ├── page.tsx         # Только форма запуска (модалка); результаты НЕ рендерит — после analyzeQuery redirect на /report/{id}
 │   │   ├── admin/page.tsx   # Model selector + prompt editors
 │   │   ├── history/page.tsx # Card grid with Running/Failed/Completed badges, bulk ops
-│   │   └── report/[id]/page.tsx  # Report detail + PDF/MD download
+│   │   └── report/[id]/page.tsx  # Универсальный: поллинг status (running→ReportSkeleton, failed→error+back), completed→отчёт + GapGraph + PDF/MD
 │   ├── components/
-│   │   ├── QueryForm.tsx    # Query input + engine selector + URL field
-│   │   ├── EntityGraph.tsx  # D3.js force-directed graph: nodes (user/competitor/gap owners), edges (co_occurrence/parent_child types), frequency-weighted sizing, type+owner color coding, entity type filter dropdown
+│   │   ├── QueryForm.tsx    # NOT USED (мёртвый код; форма инлайн в модалке page.tsx)
+│   │   ├── EntityGraph.tsx  # D3.js force graph (LEGACY — не используется; заменён GapGraph)
+│   │   ├── GapGraph.tsx     # БИПАРТИТНЫЙ граф репорта: конкуренты (from gap.found_on_urls) слева ↔ gap-сущности справа; forceX-колонки, zoom, click↔открыть страницу конкурента
 │   │   ├── GapCard.tsx      # Content gap cards (priority badges, descriptions, URL links)
 │   │   ├── GapTable.tsx     # Legacy gap table (deprecated, replaced by GapCard)
 │   │   ├── Checklist.tsx    # Numbered checklist
@@ -158,7 +158,7 @@ CREATE TABLE entities_cache (
 7. **Two gap-analysis modes:**
    - **Quick-gaps** (no user URL): all competitor entities → gaps, priority by `frequency`
    - **LLM** (with user URL): semantic gap analysis via OpenRouter
-8. **Background pipeline with polling** — analysis runs as BackgroundTasks, frontend polls `/status` every 2s.
+8. **Background pipeline with polling** — analysis runs as BackgroundTasks, **report page** polls `/status` every 2s (running→skeleton; поллинг останавливается на completed/failed через `settledRef`, иначе граф пересобирается бесконечно).
 9. **Auto-timeout** — stuck analyses (running >20min) auto-fail in `get_analysis_status()`.
 10. **Description fallback chain** — 3 levels: LLM description → competitor entity descriptions → generated `"Type: Name"` → `"Entity: Name"`.
 11. **Entity extraction limits** — semaphore=5 (max 5 concurrent LLM calls), page text truncated to 8000 chars, max 15 entities per page, 24h cache.
@@ -280,6 +280,19 @@ generation continues on the server even if the browser tab is closed.
 
 **LLM timeout**: 180s per rewrite call (article + gaps is a big task; vs 30s for extraction).
 Model: `rewrite_model` setting (Admin → Rewrite Article tab), prompts: `rewrite_system_prompt`/`rewrite_user_prompt`.
+
+## Recent Changes (2026-08-10, bipartite gap graph + report-only results)
+
+PR #3 merged to main (`a8e0b6e`).
+
+1. **Бипартитный граф на репорте** — новый `GapGraph.tsx` заменяет EntityGraph на `/report/[id]`:
+   - Узлы-конкуренты (уникальные URL из `gap.found_on_urls`) — синие прямоугольники слева (forceX → x=22%)
+   - Узлы-гэпы — красные пунктирные круги справа (forceX → x=78%), радиус по frequency
+   - Рёбра `конкурент → gap` (не cooccurrence!); клик по конкуренту открывает его страницу
+   - `EntityGraph.tsx` больше не используется (legacy; кандидат на удаление)
+2. **Главная `/` — только форма запуска** — убраны результаты/KPI/граф/поллинг/resume/localStorage (page.tsx −418 строк). После `analyzeQuery` → `router.push('/report/{id}')`.
+3. **Report page — универсальный** — поллинг `getAnalysisStatus` каждые 2с: running→ReportSkeleton, failed→error+Back to History, completed→один `getReport`. Терминальный `settledRef` останавливает поллинг (иначе каждый тик пересоздавал граф).
+4. **History** — running-анализы открываются в `/report/{id}` (было `/?id=`). Старые `/?id=` закладки больше не работают (осознанно).
 
 ## Recent Changes (2026-08-08, feat/openrouter-model-search)
 
