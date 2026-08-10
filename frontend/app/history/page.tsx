@@ -390,11 +390,11 @@ export default function HistoryPage() {
               {/* Hover actions */}
               <div className="flex gap-2 mt-3 pt-3 border-t border-border/50 opacity-0 group-hover:opacity-100 transition-opacity">
                 <Link
-                    href={item.status === "running" ? `/?id=${item.id}` : `/report/${item.id}`}
+                    href={`/report/${item.id}`}
                     onClick={(e) => e.stopPropagation()}
                     className="inline-flex h-7 flex-1 items-center justify-center rounded-lg border border-border bg-background px-2 text-xs font-medium text-foreground hover:bg-muted transition-colors"
                   >
-                    {item.status === "running" ? "View" : "Open"}
+                    Open
                   </Link>
                 {item.status === "completed" && item.gaps_count > 0 && (
                   <Button
