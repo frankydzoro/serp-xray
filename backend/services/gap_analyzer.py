@@ -6,8 +6,8 @@ from db import get_setting
 
 
 def _find_entity_description(entity_name: str, competitor_entities: list[dict]) -> str:
-    """Ищет описание сущности в сгруппированных данных конкурентов.
-    Если описания нет — генерирует fallback из name + type."""
+    """Looks up an entity description in the grouped competitor data.
+    If there is no description — generates a fallback from name + type."""
     name_lower = entity_name.lower()
     for ce in competitor_entities:
         if ce.get("name", "").lower() == name_lower:
@@ -25,9 +25,9 @@ async def analyze_gaps(
     model: str | None = None,
     query: str = "",
 ) -> list[dict]:
-    """Сравнивает сущности пользователя со ВСЕМИ сущностями конкурентов из топа выдачи.
+    """Compares the user's entities against ALL competitor entities from the top of the SERP.
 
-    competitor_entities — уже сгруппированные сущности:
+    competitor_entities — already grouped entities:
         [{name, type, frequency, descriptions: [...], source_urls: [...]}, ...]
 
     Returns:
@@ -37,7 +37,7 @@ async def analyze_gaps(
     if not competitor_entities:
         return []
 
-    # Быстрый pre-check для quick-gaps (без URL пользователя)
+    # Fast pre-check for quick-gaps (no user URL)
     if len(user_entities) == 0 and competitor_entities:
         seen = set()
         quick_gaps = []
@@ -46,7 +46,7 @@ async def analyze_gaps(
             if name and name.lower() not in seen:
                 seen.add(name.lower())
                 freq = e.get("frequency", 1)
-                # Выбираем лучшее описание (первое непустое)
+                # Pick the best description (first non-empty)
                 descriptions = e.get("descriptions", [])
                 best_desc = next((d for d in descriptions if d), "")
                 if not best_desc:
@@ -67,7 +67,7 @@ async def analyze_gaps(
     model = model or get_setting("model") or DEFAULT_MODEL
     prompt_template = get_setting("gap_prompt") or GAP_ANALYSIS_PROMPT
 
-    # Формируем читаемые списки для LLM
+    # Build readable lists for the LLM
     user_str = json.dumps(user_entities, ensure_ascii=False, indent=2)
     competitor_str = json.dumps(competitor_entities, ensure_ascii=False, indent=2)
 
@@ -113,7 +113,7 @@ async def analyze_gaps(
     except json.JSONDecodeError:
         return []
 
-    # Обогащаем каждый gap
+    # Enrich each gap
     user_names = {e.get("name", "").lower() for e in user_entities}
     for g in gaps:
         g.setdefault("entity_type", "Concept")
@@ -121,13 +121,13 @@ async def analyze_gaps(
         g.setdefault("recommendation", f"Add information about {g['entity']}")
         g["found_in_competitors"] = True
         g["found_in_user_page"] = g["entity"].lower() in user_names
-        # Если LLM не вернул описание — ищем в исходных данных конкурентов
+        # If the LLM returned no description — look it up in the original competitor data
         if not g.get("competitor_description"):
             g["competitor_description"] = _find_entity_description(
                 g["entity"], competitor_entities
             )
 
-    # Сортируем по приоритету
+    # Sort by priority
     priority_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
     gaps.sort(key=lambda g: priority_order.get(g.get("priority", "medium"), 2))
 

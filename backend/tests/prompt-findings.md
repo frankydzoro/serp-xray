@@ -1,136 +1,136 @@
 # SERP X-Ray — Prompt Remediation Plan
 
-## Результаты тестирования: 26/28 passed, 2 failed
+## Test results: 26/28 passed, 2 failed
 
 ---
 
 ## Entity Extraction Prompt
 
-### Найдено
+### Findings
 
-| # | Тест | Статус | Детали |
+| # | Test | Status | Details |
 |---|------|--------|--------|
-| 1 | Валидный JSON без markdown | PASS | — |
-| 2 | Лимит ≤15 сущностей | **FAIL** | 16 вместо 15 |
-| 3 | Пустой текст → [] | PASS | — |
-| 4 | Boilerplate (меню/футер/cookie) → [] | PASS | — |
-| 5 | Confidence в [0,1] | PASS | — |
-| 6 | Нет confidence <0.5 | PASS | — |
-| 7 | Дедупликация имён | PASS | Но «OpenAI» и «Open AI Inc.» — разные |
-| 8 | Нет generic-слов | **FAIL** | «стулья», «доставка» извлечены |
-| 9 | Воспроизводимость (temp=0) | PASS | 70%+ overlap |
-| 10 | Типы: Product vs Organization | PASS | Salesforce=Org, Sales Cloud=Product |
-| 11 | Типы: Metric vs Concept | PASS | Числа с контекстом → Metric |
+| 1 | Valid JSON without markdown | PASS | — |
+| 2 | Limit ≤15 entities | **FAIL** | 16 instead of 15 |
+| 3 | Empty text → [] | PASS | — |
+| 4 | Boilerplate (menu/footer/cookie) → [] | PASS | — |
+| 5 | Confidence in [0,1] | PASS | — |
+| 6 | No confidence <0.5 | PASS | — |
+| 7 | Name deduplication | PASS | But «OpenAI» and «Open AI Inc.» are different |
+| 8 | No generic words | **FAIL** | «стулья», «доставка» extracted |
+| 9 | Reproducibility (temp=0) | PASS | 70%+ overlap |
+| 10 | Types: Product vs Organization | PASS | Salesforce=Org, Sales Cloud=Product |
+| 11 | Types: Metric vs Concept | PASS | Numbers with context → Metric |
 
-### Проблемы и доработки
+### Problems and fixes
 
-#### ❌ 1. Лимит сущностей нарушен (16 вместо 15)
+#### ❌ 1. Entity limit violated (16 instead of 15)
 
-**Причина:** модель игнорирует текстовое ограничение в середине промпта.
+**Cause:** the model ignores the textual limit in the middle of the prompt.
 
-**Исправление:** дублировать ограничение в конце, перед форматом ответа:
+**Fix:** duplicate the limit at the end, before the response format:
 ```
-Верни не более 15 сущностей. Если сущностей больше — оставь 15 наиболее релевантных.
-```
-
-#### ❌ 2. Common nouns извлекаются как сущности
-
-**Причина:** «стулья», «доставка» — общие существительные без бренда/имени собственного.
-
-**Исправление:** добавить в правила:
-```
-НЕ извлекай: нарицательные существительные без имени собственного 
-(«стулья», «доставка», «ремонт», «услуги»), общие категории товаров 
-без бренда, глаголы и прилагательные как сущности.
-```
-И добавить few-shot negative example:
-```
-Плохо: {"name": "стулья", "type": "Product"}
-Хорошо: не извлекать (нет бренда/модели)
+Return no more than 15 entities. If there are more — keep the 15 most relevant.
 ```
 
-#### ⚠️ 3. Нормализация не сработала
+#### ❌ 2. Common nouns extracted as entities
 
-**Причина:** «OpenAI» и «Open AI Inc.» — разные строки. Нужен явный пример.
+**Cause:** «стулья», «доставка» — common nouns without a brand/proper name.
 
-**Исправление:** добавить few-shot пример:
+**Fix:** add to the rules:
 ```
-Пример дедупликации:
-Вход: «OpenAI», «Open AI», «OpenAI Inc.»
-Выход: одна сущность с name: «OpenAI»
+Do NOT extract: common nouns without a proper name
+(«стулья», «доставка», «ремонт», «услуги»), generic product categories
+without a brand, verbs and adjectives as entities.
+```
+And add a few-shot negative example:
+```
+Bad: {"name": "стулья", "type": "Product"}
+Good: don't extract (no brand/model)
+```
+
+#### ⚠️ 3. Normalization did not kick in
+
+**Cause:** «OpenAI» and «Open AI Inc.» — different strings. An explicit example is needed.
+
+**Fix:** add a few-shot example:
+```
+Deduplication example:
+Input: «OpenAI», «Open AI», «OpenAI Inc.»
+Output: a single entity with name: «OpenAI»
 ```
 
 ---
 
 ## Gap Analysis Prompt
 
-### Найдено
+### Findings
 
-| # | Тест | Статус |
+| # | Test | Status |
 |---|------|--------|
-| G1 | Валидный JSON без markdown | PASS |
-| G2 | Разрывы найдены | PASS |
-| G3 | Лимит ≤10 gaps | PASS |
-| G4 | Все поля валидны | PASS |
-| G5 | Направление top3→user | PASS |
-| G6 | Нет дублей | PASS |
-| G7 | Сортировка по priority | PASS |
-| G8 | Рекомендации конкретны | PASS |
-| G9 | Нет выдуманных сущностей | PASS |
-| G10 | Пустые входы → [] | PASS |
-| G11 | Идентичные списки → [] | PASS |
+| G1 | Valid JSON without markdown | PASS |
+| G2 | Gaps found | PASS |
+| G3 | Limit ≤10 gaps | PASS |
+| G4 | All fields valid | PASS |
+| G5 | Direction top3→user | PASS |
+| G6 | No duplicates | PASS |
+| G7 | Sorted by priority | PASS |
+| G8 | Recommendations are specific | PASS |
+| G9 | No invented entities | PASS |
+| G10 | Empty inputs → [] | PASS |
+| G11 | Identical lists → [] | PASS |
 
-### Потенциальные улучшения
+### Potential improvements
 
-#### ⚠️ 1. Частотность сущностей
+#### ⚠️ 1. Entity frequency
 
-**Текущее:** сущности топ-3 передаются плоским списком с дублями (если сущность есть на 2+ страницах, она повторяется). LLM должен сам посчитать частоту.
+**Current:** the top-3 entities are passed as a flat list with duplicates (if an entity is on 2+ pages, it repeats). The LLM must count the frequency itself.
 
-**Риск:** на gpt-4o-mini подсчёт может быть неточным.
+**Risk:** on gpt-4o-mini the count may be imprecise.
 
-**Исправление:** на стороне бэкенда предварительно группировать сущности по страницам и передавать метаинформацию:
+**Fix:** pre-group entities by page on the backend and pass metadata:
 ```json
 {"entity": "HubSpot", "type": "Product", "pages": 2, "positions": [1, 3]}
 ```
-ИЛИ добавить в промпт: «Сущности могут дублироваться — дубликат означает, что сущность найдена на ещё одной странице топ-3.»
+OR add to the prompt: «Entities may repeat — a repeat means the entity was found on one more page of the top-3.»
 
-#### ⚠️ 2. Якорь темы
+#### ⚠️ 2. Topic anchor
 
-**Текущее:** тема определяется «по набору и концентрации сущностей пользователя».
+**Current:** the topic is determined «by the set and concentration of the user's entities».
 
-**Риск:** если страница пользователя маленькая или нерелевантная, якорь слабый.
+**Risk:** if the user's page is small or irrelevant, the anchor is weak.
 
-**Исправление:** передавать search query в промпт как дополнительную переменную:
+**Fix:** pass the search query into the prompt as an extra variable:
 ```
-Тема запроса: {query}
+Query topic: {query}
 ```
-Это даст LLM явный якорь для фильтрации релевантности.
+This gives the LLM an explicit anchor for relevance filtering.
 
 ---
 
 ## Remediation Implementation Plan
 
-### Срочно (Prompt)
+### Urgent (Prompt)
 
-1. **Entity Extraction** — усилить лимит, добавить anti-hallucination rule, few-shot normalisation
-2. **Gap Analysis** — добавить `{query}` как якорь темы
+1. **Entity Extraction** — strengthen the limit, add an anti-hallucination rule, few-shot normalization
+2. **Gap Analysis** — add `{query}` as the topic anchor
 
-### Код (Backend)
+### Code (Backend)
 
-3. **analyzer.py** — передавать `query` в `analyze_gaps()`
-4. **gap_analyzer.py** — добавить `query` параметр и передавать в промпт
-5. **schemas.py** — не требует изменений
+3. **analyzer.py** — pass `query` to `analyze_gaps()`
+4. **gap_analyzer.py** — add the `query` parameter and pass it into the prompt
+5. **schemas.py** — no changes required
 
-### Опционально (Код)
+### Optional (Code)
 
-6. **entity_extractor.py** — добавить post-processing: фильтрация common words по словарю
-7. **analyzer.py** — группировать top3_entities по страницам перед gap-анализом
+6. **entity_extractor.py** — add post-processing: filter common words via a dictionary
+7. **analyzer.py** — group top3_entities by page before gap analysis
 
 ---
 
-## Эталонные ответы ожидаемых результатов
+## Reference expected results
 
-### Entity Extraction (текст про CRM)
+### Entity Extraction (CRM text)
 
 ```json
 {

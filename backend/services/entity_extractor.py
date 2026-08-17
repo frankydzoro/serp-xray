@@ -7,7 +7,7 @@ from services.text_extraction import smart_truncate
 
 
 async def extract_entities(page_text: str, url: str, model: str | None = None) -> list[dict]:
-    """Извлекает сущности из текста страницы через OpenRouter LLM.
+    """Extracts entities from page text via the OpenRouter LLM.
 
     Returns:
         [{name, type, confidence, source_url}, ...]
@@ -15,7 +15,7 @@ async def extract_entities(page_text: str, url: str, model: str | None = None) -
     model = model or get_setting("model") or DEFAULT_MODEL
     prompt_template = get_setting("entity_prompt") or ENTITY_EXTRACTION_PROMPT
 
-    # Обрезаем текст до лимита (по блокам, а не по символам — не рвём предложения)
+    # Truncate the text to the limit (by blocks, not characters — don't break sentences)
     truncated_text, _ = smart_truncate(page_text, MAX_PAGE_CHARS)
     try:
         prompt = prompt_template.format(page_text=truncated_text)
@@ -47,7 +47,7 @@ async def extract_entities(page_text: str, url: str, model: str | None = None) -
         data = json.loads(content)
         entities = data.get("entities", [])
     except json.JSONDecodeError:
-        # Иногда LLM возвращает массив напрямую
+        # Sometimes the LLM returns an array directly
         try:
             entities = json.loads(content)
             if not isinstance(entities, list):
@@ -55,16 +55,16 @@ async def extract_entities(page_text: str, url: str, model: str | None = None) -
         except json.JSONDecodeError:
             return []
 
-    # Добавляем source_url и fallback description к каждой сущности
+    # Add source_url and a fallback description to each entity
     for e in entities:
         if not e.get("description"):
             e["description"] = f"{e.get('type', 'Entity')}: {e.get('name', 'Unknown')}"
         e["source_url"] = url
 
-    # Post-processing: сортируем по confidence и обрезаем до 15
+    # Post-processing: sort by confidence and truncate to 15
     entities.sort(key=lambda e: e.get("confidence", 0), reverse=True)
 
-    # Фильтр common words — удаляем заведомо не-сущности
+    # Common-words filter — drop things that are clearly not entities
     stop_entities = {
         "доставка", "ремонт", "услуги", "сервис", "компания",
         "решение", "пользователи", "клиенты", "товар", "услуга",

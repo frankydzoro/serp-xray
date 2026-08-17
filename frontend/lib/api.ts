@@ -1,12 +1,12 @@
-// API-клиент SERP X-Ray.
-// API_BASE: пустая строка = same-origin (в проде Next rewrites проксирует /api
-// на backend; в dev `next dev` делает то же). Полный URL через NEXT_PUBLIC_API_URL
-// — только если API живёт на другом origin.
+// SERP X-Ray API client.
+// API_BASE: empty string = same-origin (in prod Next rewrites proxies /api
+// to the backend; in dev `next dev` does the same). A full URL via NEXT_PUBLIC_API_URL
+// — only when the API lives on a different origin.
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 const TOKEN_KEY = "serpxray_token";
 
-// ── Токен сессии ──────────────────────────
+// ── Session token ──────────────────────────
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
   try {
@@ -22,7 +22,7 @@ export function setToken(token: string) {
     if (token) sessionStorage.setItem(TOKEN_KEY, token);
     else sessionStorage.removeItem(TOKEN_KEY);
   } catch {
-    /* sessionStorage недоступен (private mode и т.п.) — auth работать не будет */
+    /* sessionStorage unavailable (private mode, etc.) — auth won't work */
   }
 }
 
@@ -30,7 +30,7 @@ export function clearToken() {
   setToken("");
 }
 
-// ── Основной fetch: токен + 401 → /login ──
+// ── Core fetch: token + 401 → /login ──
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const token = getToken();
   const headers = new Headers(init?.headers || {});
@@ -96,7 +96,7 @@ export interface PageProgress {
 
 export interface AnalysisProgress {
   pages: PageProgress[];
-  // из progress_meta (только для running; пишется главной корутиной пайплайна)
+  // from progress_meta (running only; written by the main pipeline coroutine)
   user_step?: "pending" | "extracting" | "done" | "failed" | "skipped";
   user_entities?: number;
   gap_step?: "pending" | "running" | "done" | "failed";
@@ -156,7 +156,7 @@ export async function bulkDelete(ids: string[]) {
   return resp.json();
 }
 
-/* ── Admin: модель и промпты ────────────── */
+/* ── Admin: model and prompts ────────────── */
 
 export async function getModel() {
   const resp = await apiFetch(`/api/admin/model`);
@@ -268,7 +268,7 @@ export interface RewriteModelData {
   model: string;
 }
 
-/** Полное состояние rewrite: none | running | completed | failed */
+/** Full rewrite state: none | running | completed | failed */
 export interface RewriteState {
   status: string;
   error: string;
@@ -315,7 +315,7 @@ export async function resetRewritePrompts(): Promise<RewritePromptsData> {
   return resp.json();
 }
 
-/** Запускает rewrite в фоне. Возвращает статус немедленно (не блокирует до готовности). */
+/** Starts a rewrite in the background. Returns the status immediately (does not block until ready). */
 export async function startRewrite(
   article_text: string,
   gaps: Array<Record<string, unknown>>,
@@ -334,7 +334,7 @@ export async function startRewrite(
   return resp.json();
 }
 
-/** Поллинг состояния rewrite. 404 = анализ не найден. */
+/** Polls the rewrite state. 404 = analysis not found. */
 export async function getRewriteStatus(analysisId: string): Promise<RewriteState> {
   const resp = await apiFetch(`/api/rewrite/${analysisId}/status`);
   if (!resp.ok) {

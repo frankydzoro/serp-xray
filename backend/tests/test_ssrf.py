@@ -1,7 +1,7 @@
-"""Тесты SSRF-защиты: IP-литералы, резолв в private, IPv6, редиректы, DNS pinning.
+"""SSRF protection tests: IP literals, resolution to private, IPv6, redirects, DNS pinning.
 
-Без сети: socket.getaddrinfo и httpx-клиент мокаются.
-Запуск: cd backend && ./venv/bin/python3 -m pytest tests/test_ssrf.py -v
+Offline: socket.getaddrinfo and the httpx client are mocked.
+Run: cd backend && ./venv/bin/python3 -m pytest tests/test_ssrf.py -v
 """
 import httpx
 import pytest
@@ -10,7 +10,7 @@ from services import serp
 from services.serp import SSRFError, resolve_and_pin, _safe_get
 
 
-# ── IP-литералы ────────────────────────────
+# ── IP literals ────────────────────────────
 
 @pytest.mark.parametrize("url", [
     "http://127.0.0.1/x",
@@ -39,7 +39,7 @@ def test_blocked_non_http_schemes(url):
         resolve_and_pin(url)
 
 
-# ── Hostname → private при резолве ─────────
+# ── Hostname → private on resolution ──────
 
 def test_blocked_host_resolving_to_private(monkeypatch):
     monkeypatch.setattr(serp.socket, "getaddrinfo",
@@ -56,18 +56,18 @@ def test_valid_hostname_pins_to_public_ip(monkeypatch):
     assert host == "example.com"
 
 
-# ── DNS pinning: коннект на проверенный IP ─
+# ── DNS pinning: connect to the verified IP ─
 
 def test_pinned_url_uses_verified_ip_not_rebind(monkeypatch):
-    """После проверки клиент получает URL с IP, а не hostname: повторный резолв
-    DNS (который мог бы вернуть private) внутри HTTP-клиента невозможен."""
+    """After the check the client gets a URL with an IP, not a hostname: a repeated
+    DNS resolution (which could return private) inside the HTTP client is impossible."""
     calls = {"n": 0}
 
     def fake_getaddrinfo(host, port, proto=0):
         calls["n"] += 1
         if calls["n"] == 1:
             return [(2, 1, 6, "", ("93.184.216.34", port))]
-        return [(2, 1, 6, "", ("127.0.0.1", port))]  # если резолв повторится — private
+        return [(2, 1, 6, "", ("127.0.0.1", port))]  # if resolution repeats — private
 
     monkeypatch.setattr(serp.socket, "getaddrinfo", fake_getaddrinfo)
 
@@ -84,14 +84,14 @@ def test_pinned_url_uses_verified_ip_not_rebind(monkeypatch):
     import asyncio
     asyncio.run(run())
 
-    assert calls["n"] == 1, "DNS должен резолвиться ровно один раз"
-    assert requested == ["http://93.184.216.34/path"], "запрос идёт на pinned IP, не на hostname"
+    assert calls["n"] == 1, "DNS must resolve exactly once"
+    assert requested == ["http://93.184.216.34/path"], "request goes to the pinned IP, not the hostname"
 
 
 # ── Redirects ──────────────────────────────
 
 def test_redirect_to_private_blocked_on_second_hop(monkeypatch):
-    """Первый хоп публичный, редирект ведёт на 127.0.0.1 — блокируется."""
+    """The first hop is public, the redirect leads to 127.0.0.1 — blocked."""
     monkeypatch.setattr(serp.socket, "getaddrinfo",
                         lambda host, port, proto=0: [(2, 1, 6, "", ("93.184.216.34", port))])
 

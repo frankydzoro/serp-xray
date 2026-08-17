@@ -10,6 +10,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Ровно 1 воркер: SQLite + in-memory rate limit корректны только в одном процессе.
-# Запуск без --reload (релоадер ломает импорты / меняет cwd).
+# Exactly 1 worker: SQLite + the in-memory rate limit are correct only in a single process.
+# Run without --reload (the reloader breaks imports / changes cwd).
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

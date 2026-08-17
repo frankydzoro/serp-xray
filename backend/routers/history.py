@@ -12,13 +12,13 @@ class BulkDeleteRequest(BaseModel):
 
 @router.get("/history")
 async def get_history(limit: int = 50):
-    """Возвращает последние N анализов (без result_json)."""
+    """Returns the last N analyses (without result_json)."""
     return list_analyses(limit)
 
 
 @router.get("/history/{analysis_id}")
 async def get_analysis_detail(analysis_id: str):
-    """Возвращает полный отчёт анализа по ID."""
+    """Returns the full analysis report by ID."""
     result = get_analysis(analysis_id)
     if not result:
         raise HTTPException(status_code=404, detail="Analysis not found")
@@ -44,7 +44,7 @@ async def bulk_delete(req: BulkDeleteRequest):
 
 @router.get("/history/{analysis_id}/rewrite", response_model=RewriteResult)
 async def get_rewrite_result(analysis_id: str):
-    """Возвращает состояние rewrite для анализа (статус + текст, если готов)."""
+    """Returns the rewrite state for an analysis (status + text, if ready)."""
     result = get_rewrite(analysis_id)
     if result["status"] == "not_found":
         raise HTTPException(status_code=404, detail="Analysis not found")

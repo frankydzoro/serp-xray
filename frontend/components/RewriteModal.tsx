@@ -21,9 +21,9 @@ interface Props {
   gaps: GapItem[];
   analysisId?: string;
   querySlug?: string;
-  /** Автозапуск генерации при монтировании (one-click поток из History) */
+  /** Auto-start generation on mount (the one-click flow from History) */
   autoStart?: boolean;
-  /** Уведомление родителя о смене состояния: loading | done | error */
+  /** Notify the parent of a state change: loading | done | error */
   onStatusChange?: (status: "idle" | "loading" | "done" | "error") => void;
 }
 
@@ -49,7 +49,7 @@ export default function RewriteModal({ articleText, gaps, analysisId, querySlug,
   const [elapsed, setElapsed] = useState(0);
   const [mountChecked, setMountChecked] = useState(false);
 
-  // Refs: переживают пересоздание эффектов, не вызывают churn в deps
+  // Refs: survive effect re-creation, no dep churn
   const startedAtRef = useRef<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const notifyRef = useRef(onStatusChange);
@@ -86,7 +86,7 @@ export default function RewriteModal({ articleText, gaps, analysisId, querySlug,
         setStatus("error");
         notify("error");
       }
-      // running → продолжаем поллить; сетевые ошибки тоже игнорируем (retry on next tick)
+      // running → keep polling; network errors are also ignored (retry on next tick)
     } catch {
       // transient — poll again on next tick
     }
@@ -132,8 +132,8 @@ export default function RewriteModal({ articleText, gaps, analysisId, querySlug,
           setResult(st.rewritten_text);
           setStatus("done");
         } else if (st.status === "running") {
-          // Генерация идёт на сервере (начата до перезагрузки страницы) —
-          // возобновляем поллинг и показываем процесс
+          // Generation is running on the server (started before the page reload) —
+          // resume polling and show the progress
           startedAtRef.current = st.started_at;
           setStatus("running");
           setOpen(true);
@@ -144,7 +144,7 @@ export default function RewriteModal({ articleText, gaps, analysisId, querySlug,
           setStatus("error");
         }
       } catch {
-        // Анализ ещё не имеет rewrite — нормальное состояние
+        // The analysis has no rewrite yet — normal state
       } finally {
         if (!cancelled) setMountChecked(true);
       }
@@ -165,14 +165,14 @@ export default function RewriteModal({ articleText, gaps, analysisId, querySlug,
     try {
       const res = await startRewrite(articleText, gaps, undefined, analysisId);
       if (res.status === "completed" && res.rewritten_text) {
-        // Сервер вернул уже готовый результат
+        // The server returned an already-finished result
         setResult(res.rewritten_text);
         setTab("result");
         setStatus("done");
         notify("done");
         return;
       }
-      // running — генерация пошла в фоне
+      // running — generation started in the background
       startedAtRef.current = res.started_at;
       setElapsed(0);
       setStatus("running");
@@ -185,11 +185,11 @@ export default function RewriteModal({ articleText, gaps, analysisId, querySlug,
     }
   };
 
-  /* ── Auto-start (one-click из History) ── */
+  /* ── Auto-start (one-click from History) ── */
 
   useEffect(() => {
     if (!autoStart || !mountChecked) return;
-    // Автозапуск только если ничего нет (idle) или прошлая попытка упала
+    // Auto-start only when nothing is present (idle) or the previous attempt failed
     if (status === "idle" || status === "error") {
       void handleStart();
     }

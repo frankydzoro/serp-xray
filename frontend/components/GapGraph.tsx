@@ -31,10 +31,10 @@ const GAP_FILL = "#FEF2F2";
 const GAP_STROKE = "#ef4444";
 
 const PRIORITY_LABEL: Record<string, string> = {
-  critical: "Критический",
-  high: "Высокий",
-  medium: "Средний",
-  low: "Низкий",
+  critical: "Critical",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
 };
 const PRIORITY_COLOR: Record<string, string> = {
   critical: "#991b1b",
@@ -247,10 +247,10 @@ export default function GapGraph({ gaps }: Props) {
       .text((d: any) => truncate(d.name, 14));
 
     // ── Tooltips ──
-    // БЕЗОПАСНОСТЬ: контент (заголовки/URL/описания) приходит с произвольных сайтов
-    // и от LLM — рендерим ТОЛЬКО через textContent, никакого innerHTML (stored XSS).
+    // SECURITY: content (titles/URLs/descriptions) comes from arbitrary sites and
+    // from the LLM — render ONLY via textContent, no innerHTML (stored XSS).
     const showTooltip = (event: any, d: any) => {
-      tooltipEl.innerHTML = ""; // чистый контейнер, строковых HTML-вставок ниже нет
+      tooltipEl.innerHTML = ""; // clean container, no raw HTML string insertions below
       const box = document.createElement("div");
       box.style.cssText = "font-size:12px;line-height:1.5;max-width:280px";
 
@@ -269,9 +269,9 @@ export default function GapGraph({ gaps }: Props) {
         box.appendChild(textSpan(d.url, "color:#64748b;word-break:break-all"));
         box.appendChild(document.createElement("br"));
         const meta: string[] = [];
-        if (d.position) meta.push(`Позиция ${d.position}`);
+        if (d.position) meta.push(`Position ${d.position}`);
         if (d.engine) meta.push(String(d.engine));
-        meta.push("клик, чтобы открыть");
+        meta.push("click to open");
         box.appendChild(textSpan(meta.join(" · "), "color:#475569;font-size:11px"));
       } else {
         const pl = PRIORITY_LABEL[d.priority] || d.priority || "gap";
@@ -288,7 +288,7 @@ export default function GapGraph({ gaps }: Props) {
         box.appendChild(document.createElement("br"));
         const typeParts: string[] = [];
         if (d.type) typeParts.push(String(d.type));
-        if (d.frequency) typeParts.push(`${d.frequency} стр.`);
+        if (d.frequency) typeParts.push(`${d.frequency} pages`);
         box.appendChild(textSpan(typeParts.join(" · "), "color:#64748b"));
         if (d.description) {
           box.appendChild(document.createElement("br"));
@@ -407,14 +407,14 @@ export default function GapGraph({ gaps }: Props) {
             className="w-3 h-3 rounded"
             style={{ backgroundColor: COMPETITOR_FILL, border: `1.5px solid ${COMPETITOR_STROKE}` }}
           />
-          Конкуренты (клик — открыть)
+          Competitors (click to open)
         </div>
         <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground bg-muted/50 px-2.5 py-1 rounded-full">
           <span
             className="w-3 h-3 rounded-full border-2 border-dashed"
             style={{ borderColor: GAP_STROKE, backgroundColor: GAP_FILL }}
           />
-          Разрывы (gap)
+          Gaps
         </div>
       </div>
     </div>

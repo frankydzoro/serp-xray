@@ -1,6 +1,6 @@
-"""Тесты структурного извлечения текста (services/text_extraction.py).
+"""Tests for structural text extraction (services/text_extraction.py).
 
-Прогон: cd backend && ./venv/bin/python3 -m pytest tests/test_text_extraction.py -v
+Run: cd backend && ./venv/bin/python3 -m pytest tests/test_text_extraction.py -v
 """
 import sys
 
@@ -76,15 +76,15 @@ def test_extract_article_html_preserves_headings():
     assert res.text
     assert res.h1_count >= 1
     assert res.h2_count >= 3
-    # Заголовки сохранились как markdown
+    # Headings preserved as markdown
     assert "## Кто такие зумеры" in res.text
     assert "## Сильные стороны" in res.text
-    # Список сохранился
+    # List preserved
     assert "- Быстро анализируют информацию" in res.text
-    # Таблица сохранилась как markdown (формат зависит от метода: trafilatura |---|---|, bs4 | --- | --- |)
+    # Table preserved as markdown (format depends on the method: trafilatura |---|---|, bs4 | --- | --- |)
     assert "| Поколение | Годы |" in res.text.replace("| |", "|")
     assert "---" in res.text
-    # Меню из nav не попало
+    # The nav menu did not leak in
     assert "Каталог" not in res.text
 
 
@@ -97,7 +97,7 @@ def test_smart_truncate_does_not_break_blocks():
     text = "абзац один с достаточно длинным содержимым и не только\n\nабзац два\n\nабзац три"
     truncated, was = smart_truncate(text, limit=30)
     assert was is True
-    assert len(truncated) <= 30 + 30  # предельно мягкая проверка на разумность
+    assert len(truncated) <= 30 + 30  # very loose sanity check
 
 
 def test_smart_truncate_small_text_untouched():

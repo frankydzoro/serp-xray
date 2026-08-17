@@ -21,7 +21,7 @@ class AnalyzeStatus(BaseModel):
     id: str
     status: str  # running, completed, failed
     stage: str   # searching, fetching, extracting, analyzing, building, done, error
-    progress: dict = {}  # постраничный прогресс: {pages: [...], user_step, gap_step, ...}
+    progress: dict = {}  # per-page progress: {pages: [...], user_step, gap_step, ...}
     result: Optional["AnalysisReport"] = None
     error: Optional[str] = None
 
@@ -46,7 +46,7 @@ class GapItem(BaseModel):
 
 
 class CompetitorPage(BaseModel):
-    """Текст и метаданные страницы конкурента."""
+    """Text and metadata of a competitor page."""
     url: str
     title: str
     position: int
@@ -66,7 +66,7 @@ class AnalysisReport(BaseModel):
     checklist: list[str] = []
     competitor_pages: list[CompetitorPage] = []
     user_page_text: str = ""
-    # Wave 1: полные данные для Knowledge Graph
+    # Wave 1: full data for the Knowledge Graph
     all_competitor_entities: list[dict] = []
     user_entities: list[dict] = []
     cooccurrence_matrix: dict[str, int] = {}
@@ -100,7 +100,7 @@ class RewriteRequest(BaseModel):
 
 
 class RewriteResponse(BaseModel):
-    """Ответ POST /api/rewrite — немедленный, до завершения генерации."""
+    """POST /api/rewrite response — immediate, before generation completes."""
     rewritten_text: str = ""
     rewritten_at: str = ""
     status: str = ""  # none | running | completed | failed
@@ -108,7 +108,7 @@ class RewriteResponse(BaseModel):
 
 
 class RewriteResult(BaseModel):
-    """Полное состояние rewrite (поллинг)."""
+    """Full rewrite state (polling)."""
     status: str  # none | running | completed | failed
     error: str = ""
     rewritten_text: str = ""

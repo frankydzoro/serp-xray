@@ -1,12 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Docker: лёгкий запуск собранного приложения (node server.js) без полного node_modules
+  // Docker: run the built app easily (node server.js) without the full node_modules
   output: "standalone",
   async rewrites() {
-    // Один origin: /api проксируется на backend. В dev — localhost:8000,
-    // в docker-compose — http://backend:8000 (переменная BACKEND_URL).
-    // Так CORS в проде не нужен, а ключи API остаются на сервере.
+    // Single origin: /api is proxied to the backend. In dev — localhost:8000,
+    // in docker-compose — http://backend:8000 (the BACKEND_URL variable).
+    // This way CORS isn't needed in prod, and API keys stay on the server.
     const backend = process.env.BACKEND_URL || "http://localhost:8000";
     return [
       {

@@ -70,8 +70,8 @@ export default function ReportPage() {
   const [progress, setProgress] = useState<AnalysisProgress | undefined>(undefined);
   const [report, setReport] = useState<any>(null);
   const [error, setError] = useState("");
-  // Терминальное состояние: после completed/failed поллинг останавливается,
-  // чтобы не пересобирать отчёт и граф каждые 2с
+  // Terminal state: after completed/failed polling stops, so the report and
+  // graph are not rebuilt every 2s
   const settledRef = useRef(false);
 
   // Poll while running, fetch full report once completed
@@ -245,7 +245,7 @@ export default function ReportPage() {
         </div>
       </div>
 
-      {/* Entity Graph — только gap-сущности, привязанные к конкурентам */}
+      {/* Entity Graph — gap entities linked to competitors only */}
       {gapCount > 0 && (
         <section>
           <SectionHeading title="Entity Graph" badge={`${gapCount}`} />
@@ -275,7 +275,7 @@ export default function ReportPage() {
         </Card>
       </section>
 
-      {/* Competitor results — аккордеон URL → сущности (диагностика пустых страниц) */}
+      {/* Competitor results — URL → entities accordion (diagnostics of empty pages) */}
       {data.competitor_pages?.length > 0 && (
         <section>
           <SectionHeading

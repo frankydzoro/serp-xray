@@ -25,7 +25,8 @@ from db import (
 router = APIRouter(prefix="/api", tags=["analyzer"])
 SEMAPHORE = asyncio.Semaphore(5)
 
-# Общий дедлайн на gap-анализ: если LLM завис/упал — отчёт собирается с тем, что уже извлечено
+# Overall deadline for the gap analysis: if the LLM hangs/crashes — the report
+# builds with whatever was already extracted
 GAP_TIMEOUT_SECONDS = 180
 
 
@@ -47,7 +48,7 @@ async def _run_pipeline(
     user_text: str | None,
     model: str,
 ):
-    """Фоновый pipeline: выполняет анализ и обновляет статус в БД."""
+    """Background pipeline: runs the analysis and updates the status in the DB."""
     try:
         # Stage: searching
         logger.info("[%s] Stage: searching (query=%r, engine=%r)", analysis_id, query, engine)
@@ -58,15 +59,15 @@ async def _run_pipeline(
             return
 
         # Stage: fetching
-        # Для 'both' берём 20 страниц (10 Google + 10 Yandex), иначе 10
+        # For 'both' we take 20 pages (10 Google + 10 Yandex), otherwise 10
         page_limit = 20 if engine == "both" else 10
         logger.info("[%s] Stage: fetching (%d URLs)", analysis_id, page_limit)
         update_analysis_status(analysis_id, "fetching")
 
         competitors = serp_results[:page_limit]
 
-        # Регистрируем страницы в прогресс-таблице (все — pending),
-        # дальше fetch/extract пишут point-апдейты по своей строке
+        # Register pages in the progress table (all — pending); after this,
+        # fetch/extract write point-updates on their own row
         register_pages(analysis_id, [
             {
                 "url": r["url"],
@@ -95,7 +96,7 @@ async def _run_pipeline(
 
         pages = await asyncio.gather(*(fetch_text(r) for r in competitors))
 
-        # Сохраняем тексты конкурентов для отчёта
+        # Save competitor texts for the report
         competitor_pages = [
             CompetitorPage(
                 url=p["url"],
@@ -118,8 +119,8 @@ async def _run_pipeline(
                     entities = await _extract_with_cache(p["url"], p["text"], model)
                     update_page(analysis_id, p["url"], step="done", entities=len(entities))
                 except Exception as e:
-                    # Одна упавшая/зависшая страница не должна ронять весь анализ:
-                    # пропускаем её, отчёт строится по остальным страницам
+                    # One failed/hung page must not sink the whole analysis:
+                    # skip it, the report builds from the remaining pages
                     logger.warning("[%s] Entity extraction failed for %s: %s", analysis_id, p["url"], e)
                     entities = []
                     update_page(analysis_id, p["url"], step="failed")
@@ -127,12 +128,12 @@ async def _run_pipeline(
 
         page_entities = await asyncio.gather(*(extract_for_page(p) for p in pages))
 
-        # Привязываем постраничные сущности к страницам конкурентов
+        # Wire per-page entities onto the competitor pages
         entities_by_url = {pe["url"]: pe["entities"] for pe in page_entities}
         for cp in competitor_pages:
             cp.entities = entities_by_url.get(cp.url, [])
 
-        # Собираем сущности со всех страниц конкурентов
+        # Collect entities from all competitor pages
         all_entities: list[dict] = []
         entity_urls: dict[str, list[dict]] = {}
         for pe in page_entities:
@@ -164,9 +165,9 @@ async def _run_pipeline(
         cooccurrence_matrix = dict(cooccurrence_raw)
 
         # ── Wave 2.1: Typed edges — parent_child detection ──
-        # Вычисляется ПОСЛЕ построения competitor_grouped (ниже)
+        # Computed AFTER competitor_grouped is built (below)
 
-        # Группируем ВСЕ сущности конкурентов по имени: frequency + descriptions + source_urls
+        # Group ALL competitor entities by name: frequency + descriptions + source_urls
         competitor_grouped: dict[str, dict] = {}
         for e in all_entities:
             key = e["name"].lower()
@@ -178,7 +179,7 @@ async def _run_pipeline(
                     "frequency": 1,
                     "descriptions": [],
                     "source_urls": [],
-                    "positions": [],     # Wave 1.3: позиции для расчёта visibility
+                    "positions": [],     # Wave 1.3: positions for the visibility calc
                 }
                 desc = e.get("description", "")
                 if desc:
@@ -194,7 +195,7 @@ async def _run_pipeline(
                 src = e.get("source_url", "")
                 if src and src not in competitor_grouped[key]["source_urls"]:
                     competitor_grouped[key]["source_urls"].append(src)
-                # Берём максимальный confidence
+                # Take the max confidence
                 if e.get("confidence", 0) > competitor_grouped[key]["confidence"]:
                     competitor_grouped[key]["confidence"] = e["confidence"]
 
@@ -204,7 +205,7 @@ async def _run_pipeline(
             reverse=True,
         )
 
-        # ── Wave 1.3: добавление позиций и adjusted_confidence ──
+        # ── Wave 1.3: add positions and adjusted_confidence ──
         from statistics import mean as _mean
         for key, group in competitor_grouped.items():
             pages = entity_urls.get(key, [])
@@ -216,7 +217,7 @@ async def _run_pipeline(
             else:
                 group["adjusted_confidence"] = group["confidence"]
 
-        # ── Wave 1.1: all_competitor_entities для фронтенда ──
+        # ── Wave 1.1: all_competitor_entities for the frontend ──
         all_competitor_entities = [
             {
                 "name": g["name"],
@@ -255,19 +256,19 @@ async def _run_pipeline(
                 "type": edge_type,
             })
 
-        # Частоты сущностей
+        # Entity frequencies
         competitor_entity_frequencies = {
             g["name"]: g["frequency"]
             for g in competitor_grouped.values()
         }
 
-        # Frequency map для обогащения gaps
+        # Frequency map for gap enrichment
         entity_freq: dict[str, int] = {
             g["name"].lower(): g["frequency"]
             for g in competitor_grouped.values()
         }
 
-        # Страница пользователя
+        # User page
         user_entities: list[dict] = []
         report_user_text = ""
         if url or user_text:
@@ -287,7 +288,7 @@ async def _run_pipeline(
         else:
             set_progress_meta(analysis_id, {"user_step": "skipped"})
 
-        # ── Wave 1.1: user_entities для фронтенда ──
+        # ── Wave 1.1: user_entities for the frontend ──
         user_entities_list = [
             {
                 "name": e.get("name", ""),
@@ -315,8 +316,9 @@ async def _run_pipeline(
             )
             set_progress_meta(analysis_id, {"gap_step": "done", "gap_count": len(gaps)})
         except Exception as e:
-            # Если gap-анализ завис или упал (сеть/LLM) — НЕ роняем анализ:
-            # сохраняем отчёт с тем, что уже извлечено (сущности, граф, coverage)
+            # If the gap analysis hangs or crashes (network/LLM) — do NOT fail the
+            # analysis: save the report with what was already extracted (entities,
+            # graph, coverage)
             logger.exception(
                 "[%s] Gap analysis failed (timeout=%ds): %s; building report with available data",
                 analysis_id, GAP_TIMEOUT_SECONDS, e,
@@ -325,7 +327,7 @@ async def _run_pipeline(
             set_progress_meta(analysis_id, {"gap_step": "failed"})
         logger.info("[%s] Gap analysis returned %d gaps", analysis_id, len(gaps))
 
-        # ── Wave 1.2: enrichment gaps частотой ──
+        # ── Wave 1.2: enrich gaps with frequency ──
         for g in gaps:
             g["frequency"] = entity_freq.get(g["entity"].lower(), 1)
 
@@ -382,7 +384,7 @@ async def _run_pipeline(
             checklist=checklist,
             competitor_pages=competitor_pages,
             user_page_text=report_user_text,
-            # Wave 1: новые поля для Entity Graph
+            # Wave 1: new fields for the Entity Graph
             all_competitor_entities=all_competitor_entities,
             user_entities=user_entities_list,
             cooccurrence_matrix=cooccurrence_matrix,
@@ -402,15 +404,15 @@ async def analyze(
     background_tasks: BackgroundTasks,
     _rate_token: str = Depends(rate_limit_analyze),
 ):
-    """Запускает анализ и сразу возвращает ID. Pipeline выполняется в фоне.
-    rate_limit_analyze: лимит 10 запусков/мин на сессионный токен + require_auth."""
+    """Starts the analysis and returns the ID immediately. The pipeline runs in the background.
+    rate_limit_analyze: 10 starts/min per session token + require_auth."""
     model = get_setting("model") or "openai/gpt-4o"
     analysis_id = str(uuid.uuid4())[:12]
 
-    # Создаём запись сразу
+    # Create the record immediately
     create_running_analysis(analysis_id, req.query, model, req.url)
 
-    # Запускаем pipeline в фоне
+    # Start the pipeline in the background
     background_tasks.add_task(
         _run_pipeline, analysis_id, req.query, req.engine, req.url, req.user_text, model,
     )
@@ -420,7 +422,7 @@ async def analyze(
 
 @router.get("/analyze/{analysis_id}/status", response_model=AnalyzeStatus)
 async def get_status(analysis_id: str):
-    """Возвращает текущий статус анализа."""
+    """Returns the current analysis status."""
     try:
         data = get_analysis_status(analysis_id)
     except Exception as e:

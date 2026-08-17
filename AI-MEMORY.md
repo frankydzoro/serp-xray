@@ -9,7 +9,7 @@ SERP X-Ray — local web tool for competitive SERP entity analysis.
 Takes a search query → fetches top-20 via SerpAPI (Google/Yandex/both) → extracts Knowledge Graph entities via OpenRouter LLM → compares against user's page → builds gap graph + prioritized checklist.
 
 **Path:** `~/serp-xray/`  
-**Git:** branch `main` (PR workflow через GitHub, remote `frankydzoro/serp-xray`)
+**Git:** branch `main` (PR workflow via GitHub, remote `frankydzoro/serp-xray`)  
 **Owner:** Petr Grishechkin, SEO specialist, Russian-speaking, prefers English UI
 
 ## Architecture
@@ -26,52 +26,52 @@ Backend talks to:
 
 ## Production Readiness / Security (2026-08-10)
 
-Backend auth + prod-обвязка (для не-локального запуска). Полный разбор и решения — Skill `serp-xray` секция "Production Readiness".
+Backend auth + production scaffolding (for non-local deployment). Full breakdown and decisions — the `serp-xray` skill, "Production Readiness" section.
 
 **Auth (session tokens):**
-- `POST /api/login {password}` → `secrets.compare_digest` с `SERPXRAY_ADMIN_PASSWORD` → токен `secrets.token_urlsafe(32)`; в БД (`auth_sessions`) хранится ТОЛЬКО `sha256(токена)`.
-- Каждый `/api/*` (кроме `/login`, `/health`) — dependency `require_auth` (в `main.py` через `dependencies=[Depends(require_auth)]` на include_router): сверка хэша + `expires_at > now` + `password_sha == sha256(текущего env-пароля)`. Смена пароля в env мгновенно инвалидирует ВСЕ сессии (без ручной чистки). Sliding-продление `expires_at = now + TTL` (default 30d). Заголовок регистронезависим.
-- Cleanup истёкших сессий — при каждом успешном `/login`, без cron.
-- **Fail-fast:** `main.py` startup бросает RuntimeError, если нет `SERPXRAY_ADMIN_PASSWORD` (кроме явного `SERPXRAY_AUTH_DISABLED=1` для локального dev). Локальную разработку сломать: задать пароль в `backend/.env` или выставить `AUTH_DISABLED`.
-- Брутфорс: глобальный бакет на `/login` (5 неудачных/мин → блокировка 300с).
-- Rate limit: `/api/analyze` — по ТОКЕНУ сессии (10/мин), НЕ по IP (за прокси IP один).
+- `POST /api/login {password}` → `secrets.compare_digest` against `SERPXRAY_ADMIN_PASSWORD` → token `secrets.token_urlsafe(32)`; only `sha256(token)` is stored in the DB (`auth_sessions`).
+- Every `/api/*` (except `/login`, `/health`) — dependency `require_auth` (in `main.py` via `dependencies=[Depends(require_auth)]` on include_router): checks the hash + `expires_at > now` + `password_sha == sha256(current env password)`. Changing the password in env instantly invalidates ALL sessions (no manual cleanup). Sliding renewal `expires_at = now + TTL` (default 30d). Header is case-insensitive.
+- Expired sessions are cleaned up on every successful `/login`, no cron.
+- **Fail-fast:** `main.py` startup raises RuntimeError if `SERPXRAY_ADMIN_PASSWORD` is missing (unless explicit `SERPXRAY_AUTH_DISABLED=1` for local dev). To not break local dev: set a password in `backend/.env` or set `AUTH_DISABLED`.
+- Brute force: a global bucket on `/login` (5 failures/min → 300s lockout).
+- Rate limit: `/api/analyze` — per session TOKEN (10/min), NOT per IP (behind a proxy all requests share one IP).
 
-**config.py:** `load_dotenv(override=False)` — приоритет: окружение → `backend/.env` → `~/.hermes/.env` (legacy). Новые: `SERPXRAY_ADMIN_PASSWORD`, `SERPXRAY_AUTH_DISABLED`, `SERPXRAY_TRUST_PROXY`, `SERPXRAY_CORS_ORIGINS`, `SERPXRAY_SESSION_TTL_DAYS`.
+**config.py:** `load_dotenv(override=False)` — priority: environment → `backend/.env` → `~/.hermes/.env` (legacy). New vars: `SERPXRAY_ADMIN_PASSWORD`, `SERPXRAY_AUTH_DISABLED`, `SERPXRAY_TRUST_PROXY`, `SERPXRAY_CORS_ORIGINS`, `SERPXRAY_SESSION_TTL_DAYS`.
 
-**CORS:** `allow_origins` из env, `allow_credentials=False` всегда. В проде с Next rewrites (один origin) CORS не участвует.
+**CORS:** `allow_origins` from env, `allow_credentials=False` always. In prod with Next rewrites (single origin) CORS is not involved.
 
 **SSRF (`services/serp.py`):**
-- `resolve_and_pin(url)` → `(pinned_url, host)`: резолв всех A/AAAA через `getaddrinfo`, блок `is_private/is_loopback/is_link_local(вкл 169.254.169.254)/is_multicast/is_reserved/is_unspecified` + IPv4-mapped `::ffff:`; IP-литералы проверяются без резолва; схемы только http/https.
-- **DNS pinning:** клиент соединяется с проверенным IP (`Host`-заголовок + `sni_hostname` extension для https), а НЕ пере-резолвит hostname — закрывает rebinding между проверкой и коннектом.
-- Redirects обрабатываются вручную (`follow_redirects=False`, ≤5 хопов) — каждый хоп заново `resolve_and_pin`. Остаточный риск (гонка внутри TCP-хендшейка) задокументирован, не закрыт — для личного инструмента ок.
-- `fetch_page_text` теперь идёт через `_safe_get` (это касается и страниц-конкурентов, и user-URL).
+- `resolve_and_pin(url)` → `(pinned_url, host)`: resolves all A/AAAA via `getaddrinfo`, blocks `is_private/is_loopback/is_link_local(incl 169.254.169.254)/is_multicast/is_reserved/is_unspecified` + IPv4-mapped `::ffff:`; IP literals are checked without resolution; http/https schemes only.
+- **DNS pinning:** the client connects to the verified IP (`Host` header + `sni_hostname` extension for https), and does NOT re-resolve the hostname — closes rebinding between check and connect.
+- Redirects are handled manually (`follow_redirects=False`, ≤5 hops) — each hop re-runs `resolve_and_pin`. The residual risk (a race inside the TCP handshake) is documented, not closed — acceptable for a personal tool.
+- `fetch_page_text` now goes through `_safe_get` (applies to competitor pages and user-URL alike).
 
-**Rate limit:** in-memory, поэтому ровно **1 uvicorn worker** (SQLite тоже). В compose порт 8000 НЕ публикуется (только `expose`), `SERPXRAY_TRUST_PROXY=1`.
+**Rate limit:** in-memory, hence exactly **1 uvicorn worker** (SQLite too). In compose port 8000 is NOT published (only `expose`), `SERPXRAY_TRUST_PROXY=1`.
 
 **Frontend (auth):**
-- `lib/api.ts`: `API_BASE = NEXT_PUBLIC_API_URL || ""` (same-origin через rewrites), `getToken/setToken/clearToken` (sessionStorage), `apiFetch(path, init)` подставляет `X-Auth-Token`, на 401 чистит токен и редиректит на `/login`. `login(password)`. `deleteAnalysis`/`bulkDelete` добавлены.
-- `app/login/page.tsx` — форма; `components/AuthGuard.tsx` — клиентский guard. **ПИТФОЛЛ:** AuthGuard НЕ блокирует рендер children (не держит спиннер до ready!) — при проблемной гидратации это вешало страницу навсегда. Правильно: рендерить children сразу, редирект на /login — мягким `useEffect` + `window.location.href` (никакого router.replace в эффекте для статических страниц).
-- `app/history/page.tsx` — хардкод `http://localhost:8000` убран (был известный issue), выборки через `apiFetch/deleteAnalysis/bulkDelete`.
+- `lib/api.ts`: `API_BASE = NEXT_PUBLIC_API_URL || ""` (same-origin via rewrites), `getToken/setToken/clearToken` (sessionStorage), `apiFetch(path, init)` adds `X-Auth-Token`, on 401 clears the token and redirects to `/login`. `login(password)`. `deleteAnalysis`/`bulkDelete` added.
+- `app/login/page.tsx` — the form; `components/AuthGuard.tsx` — client-side guard. **PITFALL:** AuthGuard must NOT block rendering children (don't hold a spinner until ready!) — with problematic hydration that hung the page forever. Correct: render children immediately, redirect to /login via a soft `useEffect` + `window.location.href` (no router.replace in the effect for static pages).
+- `app/history/page.tsx` — the `http://localhost:8000` hardcode is removed (was a known issue), fetches via `apiFetch/deleteAnalysis/bulkDelete`.
 - `next.config.ts`: `output: 'standalone'` + `rewrites /api/:path* → BACKEND_URL`.
 
-**XSS (шаг 0):** `GapGraph.tsx` тултипы переписаны на `document.createElement`/`textContent` (был `innerHTML` с `d.title/d.url/d.description` — stored XSS кража токена). `EntityGraph.tsx` — dead code, в нём тоже `innerHTML` в тултипе — НЕ рендерится, но удалить при случае.
+**XSS (step 0):** `GapGraph.tsx` tooltips rewritten to `document.createElement`/`textContent` (was `innerHTML` with `d.title/d.url/d.description` — stored XSS stealing the token). `EntityGraph.tsx` — dead code, also has `innerHTML` in the tooltip — not rendered, but delete when convenient.
 
-**Docker:** `backend/Dockerfile`, `frontend/Dockerfile` (standalone), `docker-compose.yml` (backend+frontend+caddy, volume `serp_data:/app/data`, healthcheck, `restart: unless-stopped`, depends_on с условием), `Caddyfile` (Let's Encrypt для `{$SERPXRAY_DOMAIN}`), `.env.example`. HTTPS обязателен — через Caddy.
+**Docker:** `backend/Dockerfile`, `frontend/Dockerfile` (standalone), `docker-compose.yml` (backend+frontend+caddy, volume `serp_data:/app/data`, healthcheck, `restart: unless-stopped`, conditional depends_on), `Caddyfile` (Let's Encrypt for `{$SERPXRAY_DOMAIN}`), `.env.example`. HTTPS is mandatory — via Caddy.
 
-**Frontend build/standalone:** `next build` генерит `.next/standalone` + `.next/static`; запуск `node server.js` (нужно скопировать `public/` и `.next/static`). Turbopack. FAST-build (~5s), tsc чист, 57 backend-тестов зелёные.
+**Frontend build/standalone:** `next build` produces `.next/standalone` + `.next/static`; run with `node server.js` (must copy `public/` and `.next/static`). Turbopack. FAST build (~5s), tsc clean, 57 backend tests green.
 
 ## Pipeline (Background Task)
 
 Analysis runs as a FastAPI `BackgroundTasks` with 5 stages:
 
 1. **searching** — SerpAPI fetch top-20 (Google/Yandex/both)
-2. **fetching** — fetch page text (10 pages per engine, 20 total for 'both'), **детерминированная очистка `clean_article_text()`** в `fetch_page_text()` (удаляет мету/оглавление/теги/кнопки, склеивает `-\n` переносы) — применяется ко всем страницам (user + competitors)
-3. **extracting** — LLM entity extraction per page (with semaphore=5, timeout=30s per call, 24h entity cache, stop-words filter, top-15 cap)
-4. **analyzing** — ДВА последовательных LLM-шага: (a) сущности страницы пользователя (URL или pasted text), (b) gap analysis (quick-gaps or LLM, timeout=30s; общий дедлайн `GAP_TIMEOUT_SECONDS=180`, при фейле `gaps=[]` — отчёт строится без gaps)
-5. **building** — assemble report including Wave 1 Knowledge Graph fields: all_competitor_entities, user_entities, cooccurrence_matrix (pairwise «entity1|entity2» → count), competitor_entity_frequencies, typed_edges (co_occurrence / parent_child detection via description matching)
+2. **fetching** — fetch page text (10 pages per engine, 20 total for 'both'), **deterministic `clean_article_text()`** in `fetch_page_text()` (removes meta/TOC/tags/buttons, glues `-\n` breaks) — applied to all pages (user + competitors)
+3. **extracting** — LLM entity extraction per page (semaphore=5, timeout=30s per call, 24h entity cache, stop-words filter, top-15 cap)
+4. **analyzing** — TWO sequential LLM steps: (a) user page entities (URL or pasted text), (b) gap analysis (quick-gaps or LLM, timeout=30s; overall deadline `GAP_TIMEOUT_SECONDS=180`, on failure `gaps=[]` — the report builds without gaps)
+5. **building** — assemble report including Wave 1 Knowledge Graph fields: all_competitor_entities, user_entities, cooccurrence_matrix (pairwise `entity1|entity2` → count), competitor_entity_frequencies, typed_edges (co_occurrence / parent_child detection via description matching)
 
-Each stage updates `stage` column in DB. **Per-page progress** (fetch/extract) пишется в таблицу `analysis_pages` point-апдейтами (без read-modify-write), метаданные user_page/gap — в `progress_meta`. Frontend polls `GET /api/analyze/{id}/status` every 2s, ответ содержит `progress: {pages: [...], user_step, gap_step, ...}`.  
-Auto-timeout: stuck analyses (20+ min) auto-marked as `failed`.  
+Each stage updates the `stage` column in DB. **Per-page progress** (fetch/extract) is written to the `analysis_pages` table via point-updates (no read-modify-write), user_page/gap metadata goes to `progress_meta`. Frontend polls `GET /api/analyze/{id}/status` every 2s, the response includes `progress: {pages: [...], user_step, gap_step, ...}`.  
+Auto-timeout: stuck analyses (20+ min) are auto-marked `failed`.  
 **Logging**: each stage logged with `logger.info()` including analysis_id and key metrics.
 
 ## Directory Layout
@@ -89,27 +89,27 @@ Auto-timeout: stuck analyses (20+ min) auto-marked as `failed`.
 │   │   └── models.py        # GET /api/models — OpenRouter proxy with cache + filtering
 │   ├── services/
 │   │   ├── serp.py          # SerpAPI: fetch_top20(engine), fetch_page_text() + clean_article_text()
-│   │   ├── article_cleaner.py  # Детерминированная очистка текста (regex, без LLM) — clean_article_text()
+│   │   ├── article_cleaner.py  # Deterministic text cleanup (regex, no LLM) — clean_article_text()
 │   │   ├── entity_extractor.py  # OpenRouter LLM → entities (semaphore=5, 24h cache, stop-words, top-15)
 │   │   └── gap_analyzer.py  # Gap detection: quick-gaps (no URL) + LLM fallback, description enrichment
 │   ├── models/schemas.py    # Pydantic: AnalyzeRequest, GapItem, AnalysisReport, AnalyzeStatus
 │   ├── prompts/default.py   # Default prompts (fallback, overridden via DB)
 │   ├── tests/
-│   │   ├── test_article_cleaner.py  # 11 тестов cleaner (мета/оглавление/теги/склейка/кнопки/smoke markdown)
-│   │   ├── test_prompts.py  # 29 systematic prompt tests (запуск: python -m tests.test_prompts, НЕ pytest!)
+│   │   ├── test_article_cleaner.py  # 11 cleaner tests (meta/TOC/tags/glue/buttons/smoke markdown)
+│   │   ├── test_prompts.py  # 29 systematic prompt tests (run: python -m tests.test_prompts, NOT pytest!)
 │   │   └── prompt-findings.md # Remediation plan (all items completed)
 │   └── venv/                # Python 3.11.15
 ├── frontend/
 │   ├── app/                 # Next.js App Router
 │   │   ├── layout.tsx       # Root layout with AppNav
-│   │   ├── page.tsx         # Только форма запуска (модалка); результаты НЕ рендерит — после analyzeQuery redirect на /report/{id}
+│   │   ├── page.tsx         # Launch form only (modal); does NOT render results — after analyzeQuery redirects to /report/{id}
 │   │   ├── admin/page.tsx   # Model selector + prompt editors
 │   │   ├── history/page.tsx # Card grid with Running/Failed/Completed badges, bulk ops
-│   │   └── report/[id]/page.tsx  # Универсальный: поллинг status (running→ReportSkeleton, failed→error+back), completed→отчёт + GapGraph + PDF/MD
+│   │   └── report/[id]/page.tsx  # Universal: polls status (running→ReportSkeleton, failed→error+back), completed→report + GapGraph + PDF/MD
 │   ├── components/
-│   │   ├── QueryForm.tsx    # NOT USED (мёртвый код; форма инлайн в модалке page.tsx)
-│   │   ├── EntityGraph.tsx  # D3.js force graph (LEGACY — не используется; заменён GapGraph)
-│   │   ├── GapGraph.tsx     # БИПАРТИТНЫЙ граф репорта: конкуренты (from gap.found_on_urls) слева ↔ gap-сущности справа; forceX-колонки, zoom, click↔открыть страницу конкурента
+│   │   ├── QueryForm.tsx    # NOT USED (dead code; form is inline in page.tsx modal)
+│   │   ├── EntityGraph.tsx  # D3.js force graph (LEGACY — unused; replaced by GapGraph)
+│   │   ├── GapGraph.tsx     # BIPARTITE report graph: competitors (from gap.found_on_urls) left ↔ gap entities right; forceX columns, zoom, click↔open competitor page
 │   │   ├── GapCard.tsx      # Content gap cards (priority badges, descriptions, URL links)
 │   │   ├── GapTable.tsx     # Legacy gap table (deprecated, replaced by GapCard)
 │   │   ├── Checklist.tsx    # Numbered checklist
@@ -137,7 +137,7 @@ CREATE TABLE analyses (
     status TEXT NOT NULL DEFAULT 'running',
     stage TEXT NOT NULL DEFAULT 'searching',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    -- … + rewritten_*, rewrite_* (см. Rewrite Article), progress_meta TEXT NOT NULL DEFAULT '{}'
+    -- … + rewritten_*, rewrite_* (see Rewrite Article), progress_meta TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE settings (
@@ -151,7 +151,7 @@ CREATE TABLE entities_cache (
     extracted_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Постраничный прогресс анализа (point-апдейты из конкурентных корутин; race-free по PK)
+-- Per-page analysis progress (point-updates from concurrent coroutines; race-free by PK)
 CREATE TABLE analysis_pages (
     analysis_id TEXT NOT NULL,
     url TEXT NOT NULL,
@@ -159,8 +159,8 @@ CREATE TABLE analysis_pages (
     position INTEGER NOT NULL DEFAULT 0,
     engine TEXT NOT NULL DEFAULT '',
     step TEXT NOT NULL DEFAULT 'pending',   -- pending → fetching → done|failed → extracting → done|failed
-    chars INTEGER NOT NULL DEFAULT 0,       -- длина текста (fetch-done)
-    entities INTEGER NOT NULL DEFAULT 0,    -- число сущностей (extract-done)
+    chars INTEGER NOT NULL DEFAULT 0,       -- text length (fetch-done)
+    entities INTEGER NOT NULL DEFAULT 0,    -- entity count (extract-done)
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (analysis_id, url)
 );
@@ -174,14 +174,14 @@ CREATE TABLE analysis_pages (
 ### Stage values
 - `searching` → `fetching` → `extracting` → `analyzing` → `building` → `done`
 - `error` — terminal failure
-- На `fetching`/`extracting` плюс к stage пишется **постраничный прогресс** в `analysis_pages`; на `analyzing` — `progress_meta` (`user_step`, затем `gap_step`). Фронт показывает на `fetching/extracting` лист статей, на `analyzing` — две строки (Your page / Gap analysis).
+- On `fetching`/`extracting`, in addition to `stage`, **per-page progress** is written to `analysis_pages`; on `analyzing` — `progress_meta` (`user_step`, then `gap_step`). The frontend shows an article list on `fetching/extracting`, and two rows (Your page / Gap analysis) on `analyzing`.
 
 ### DB Functions
 - `create_running_analysis(id, query, model, url)` — inserts with status=running
 - `update_analysis_status(id, stage)` — updates stage only
-- `register_pages(id, pages)` — INSERT OR IGNORE страницы (все pending)
-- `update_page(id, url, step=, chars=, entities=)` — point-апдейт строки analysis_pages (без read-modify-write)
-- `set_progress_meta(id, dict)` — merge-апдейт progress_meta (только из главной корутины между gather — гонок нет)
+- `register_pages(id, pages)` — INSERT OR IGNORE pages (all pending)
+- `update_page(id, url, step=, chars=, entities=)` — point-update of an analysis_pages row (no read-modify-write)
+- `set_progress_meta(id, dict)` — merge-update progress_meta (only from the main coroutine between gathers — no races)
 - `complete_analysis(id, result)` — saves result, sets status=completed
 - `fail_analysis(id, error)` — sets status=failed, stage=error
 - `get_analysis_status(id)` — returns status/stage/**progress** (`{pages, user_step, gap_step, ...}`), auto-timeouts after 20min
@@ -215,7 +215,7 @@ CREATE TABLE analysis_pages (
 7. **Two gap-analysis modes:**
    - **Quick-gaps** (no user URL): all competitor entities → gaps, priority by `frequency`
    - **LLM** (with user URL): semantic gap analysis via OpenRouter
-8. **Background pipeline with polling** — analysis runs as BackgroundTasks, **report page** polls `/status` every 2s (running→skeleton; поллинг останавливается на completed/failed через `settledRef`, иначе граф пересобирается бесконечно).
+8. **Background pipeline with polling** — analysis runs as BackgroundTasks, **report page** polls `/status` every 2s (running→skeleton; polling stops on completed/failed via `settledRef`, otherwise the graph rebuilds endlessly).
 9. **Auto-timeout** — stuck analyses (running >20min) auto-fail in `get_analysis_status()`.
 10. **Description fallback chain** — 3 levels: LLM description → competitor entity descriptions → generated `"Type: Name"` → `"Entity: Name"`.
 11. **Entity extraction limits** — semaphore=5 (max 5 concurrent LLM calls), page text truncated to 8000 chars, max 15 entities per page, 24h cache.
@@ -229,7 +229,7 @@ CREATE TABLE analysis_pages (
 - `user_entity_coverage`, `competitor_entity_coverage` — coverage % (0-100)
 - `gaps` — GapItem[] (max 20: entity, entity_type, found_in_competitors, found_in_user_page, priority, recommendation, competitor_description, found_on_urls)
 - `checklist` — actionable items (string[])
-- `competitor_pages` — CompetitorPage[] (url, title, position, engine, text, **entities**) — entities = постраничные сущности, привязка из `page_entities` в `analyzer.py` (мапа url→entities); пустая страница = текст вытащился, а NER не сработал
+- `competitor_pages` — CompetitorPage[] (url, title, position, engine, text, **entities**) — entities = per-page entities, wired from `page_entities` in `analyzer.py` (url→entities map); an empty page = text was extracted but NER produced nothing
 - `user_page_text` — raw text of analyzed user page
 
 ### Wave 1 — Knowledge Graph fields
@@ -340,57 +340,57 @@ Model: `rewrite_model` setting (Admin → Rewrite Article tab), prompts: `rewrit
 
 ## Recent Changes (2026-08-10, competitor results accordion)
 
-5. **Competitor Results аккордеон** — новая секция на `/report/[id]` между Content Gaps и Checklist:
-   - `CompetitorEntities.tsx` — аккордеон URL → сущности: `#позиция · engine · title` + бейдж «N entities»
-   - Пустые страницы (0 сущностей) — красный бейдж «0 entities» + предупреждение сверху «⚠ N of M pages have 0 entities» (диагностика: текст вытащился, NER не сработал)
-   - Backend: `CompetitorPage.entities: list[dict] = []` (schemas.py) + привязка постраничных сущностей в `analyzer.py` (после `page_entities = gather(...)` — мапа url→entities)
-   - Старые отчёты в БД entities не содержат (покажут «0 entities»)
+5. **Competitor Results accordion** — a new section on `/report/[id]` between Content Gaps and Checklist:
+   - `CompetitorEntities.tsx` — URL → entities accordion: `#position · engine · title` + an «N entities» badge
+   - Empty pages (0 entities) — red «0 entities» badge + a warning at the top «⚠ N of M pages have 0 entities» (diagnostics: text extracted, NER produced nothing)
+   - Backend: `CompetitorPage.entities: list[dict] = []` (schemas.py) + per-page entity wiring in `analyzer.py` (after `page_entities = gather(...)` — url→entities map)
+   - Old DB reports don't contain entities (will show «0 entities»)
 
 ## Recent Changes (2026-08-10, bipartite gap graph + report-only results)
 
 PR #3 merged to main (`a8e0b6e`).
 
-1. **Бипартитный граф на репорте** — новый `GapGraph.tsx` заменяет EntityGraph на `/report/[id]`:
-   - Узлы-конкуренты (уникальные URL из `gap.found_on_urls`) — синие прямоугольники слева (forceX → x=22%)
-   - Узлы-гэпы — красные пунктирные круги справа (forceX → x=78%), радиус по frequency
-   - Рёбра `конкурент → gap` (не cooccurrence!); клик по конкуренту открывает его страницу
-   - `EntityGraph.tsx` больше не используется (legacy; кандидат на удаление)
-2. **Главная `/` — только форма запуска** — убраны результаты/KPI/граф/поллинг/resume/localStorage (page.tsx −418 строк). После `analyzeQuery` → `router.push('/report/{id}')`.
-3. **Report page — универсальный** — поллинг `getAnalysisStatus` каждые 2с: running→ReportSkeleton, failed→error+Back to History, completed→один `getReport`. Терминальный `settledRef` останавливает поллинг (иначе каждый тик пересоздавал граф).
-4. **History** — running-анализы открываются в `/report/{id}` (было `/?id=`). Старые `/?id=` закладки больше не работают (осознанно).
+1. **Bipartite graph on the report** — new `GapGraph.tsx` replaces EntityGraph on `/report/[id]`:
+   - Competitor nodes (unique URLs from `gap.found_on_urls`) — blue rectangles on the left (forceX → x=22%)
+   - Gap nodes — red dashed circles on the right (forceX → x=78%), radius by frequency
+   - Edges `competitor → gap` (not co-occurrence!); clicking a competitor opens its page
+   - `EntityGraph.tsx` no longer used (legacy; delete candidate)
+2. **Home `/` — launch form only** — results/KPI/graph/polling/resume/localStorage removed (page.tsx −418 lines). After `analyzeQuery` → `router.push('/report/{id}')`.
+3. **Report page — universal** — polls `getAnalysisStatus` every 2s: running→ReportSkeleton, failed→error+Back to History, completed→a single `getReport`. The terminal `settledRef` stops polling (otherwise each tick recreated the graph).
+4. **History** — running analyses open in `/report/{id}` (was `/?id=`). Old `/?id=` bookmarks no longer work (intentional).
 
 ## Recent Changes (2026-08-10, structured text extraction: Trafilatura → quality gate → BS4)
 
-**Проблема**: Trafilatura в дефолтном precision-режиме выбрасывал H2-заголовки и резал контент (реальный кейс Росэлторга: HTML имел H1+7 H2 и 6330 символов в `.article-reader`, а `extract` вернул 3740 символов и **0 заголовков**). Для NER это катастрофа — LLM не видит структуру документа.
+**Problem**: Trafilatura in its default precision mode dropped H2 headings and cut content (a real Roseltorg case: the HTML had H1+7 H2 and 6330 chars in `.article-reader`, while `extract` returned 3740 chars and **0 headings**). For NER this is a disaster — the LLM can't see the document structure.
 
-**Решение — новый модуль `services/text_extraction.py`** (каскад, структура сохраняется):
-1. **Trafilatura** с `favor_recall=True`, `output_format="markdown"`, `include_tables=True`, `include_links=False`, `include_images=False` — recall важнее precision.
-2. **Quality gate** `_assess_quality()` — провал если: (а) `len < 300`; (б) в DOM-кандидате ≥2 H2, а в markdown 0; (в) текст < 50% длины DOM-кандидата. Порог 300 вместо старого 50.
-3. **BS4 structural** — обход DOM-кандидата, превращение в Markdown: `h1..h6→#`, `p→текст`, `ul/ol→- item`, `table→| a | b |` (экранирует `|` в ячейках), `blockquote→>`. Служебные (`nav/footer/header/aside/script/style`) пропускаются.
-4. **raw text** — старый грубый fallback (semantic tags + CSS + `get_text("\n")`), `logger.warning("Extraction degraded...")`.
+**Solution — new module `services/text_extraction.py`** (cascade, structure preserved):
+1. **Trafilatura** with `favor_recall=True`, `output_format="markdown"`, `include_tables=True`, `include_links=False`, `include_images=False` — recall over precision.
+2. **Quality gate** `_assess_quality()` — fails if: (a) `len < 300`; (b) the DOM candidate has ≥2 H2 but markdown has 0; (c) text < 50% of the DOM candidate's length. Threshold 300 instead of the old 50.
+3. **BS4 structural** — walks the DOM candidate, converts to Markdown: `h1..h6→#`, `p→text`, `ul/ol→- item`, `table→| a | b |` (escapes `|` in cells), `blockquote→>`. Service nodes (`nav/footer/header/aside/script/style`) are skipped.
+4. **raw text** — the old crude fallback (semantic tags + CSS + `get_text("\n")`), `logger.warning("Extraction degraded...")`.
 
-**DOM-кандидаты** `find_content_candidate()`: каскад `article → [itemprop="articleBody"] → main → .article-content → .post-content → .entry-content → #content` + словарь **`DOMAIN_SELECTORS`** для шаблонов без article/main (`cv.roseltorg.ru: [".article-reader"]` — там article/main в DOM НЕТ). Доменные оверрайды — только доп. приоритет, не единственный путь.
+**DOM candidates** `find_content_candidate()`: cascade `article → [itemprop="articleBody"] → main → .article-content → .post-content → .entry-content → #content` + the **`DOMAIN_SELECTORS`** dict for templates without article/main (`cv.roseltorg.ru: [".article-reader"]` — there is NO article/main in that DOM). Domain overrides are only extra priority, not the sole path.
 
-**`PageTextResult`**: `{text, method: trafilatura|bs4_structural|raw_text, char_count, h1_count, h2_count, h3_count, truncated, warnings[]}` — метрики для логирования деградаций, будущего хранения метаданных.
+**`PageTextResult`**: `{text, method: trafilatura|bs4_structural|raw_text, char_count, h1_count, h2_count, h3_count, truncated, warnings[]}` — metrics for logging degradations and future metadata storage.
 
-**`serp.py::fetch_page_text()`** стал тонкой обёрткой: скачал HTML → `extract_page_text_from_html(html, url).text`.
+**`serp.py::fetch_page_text()`** became a thin wrapper: fetched HTML → `extract_page_text_from_html(html, url).text`.
 
-**Обрезка до 8000 — только на входе в LLM**: `entity_extractor.py` использует `smart_truncate(text, MAX_PAGE_CHARS)` (режет по блокам `\n\n`, не рвёт предложения). Отчёт хранит **полный** текст страницы (`PageTextResult.truncated` всегда False в оркестраторе).
+**Truncation to 8000 — only at the LLM input**: `entity_extractor.py` uses `smart_truncate(text, MAX_PAGE_CHARS)` (cuts on `\n\n` blocks, doesn't break sentences). The report stores the **full** page text (`PageTextResult.truncated` is always False in the orchestrator).
 
-**Тесты**: `tests/test_text_extraction.py` (9 шт.: каскад селекторов, доменный оверрайд, сохранение заголовков/списков/таблиц, smart_truncate). ВАЖНО: markdown-таблицы в тестах бывают в двух форматах — trafilatura `|---|---|`, bs4 `| --- | --- |`.
+**Tests**: `tests/test_text_extraction.py` (9 items: selector cascade, domain override, heading/list/table preservation, smart_truncate). IMPORTANT: markdown tables in tests come in two formats — trafilatura `|---|---|`, bs4 `| --- | --- |`.
 
-**Питфолл после правок extraction**: сбросить `entities_cache` (`DELETE FROM entities_cache;` после kill uvicorn — старые записи вернут сущности из текста без заголовков) и перезапустить uvicorn (без `--reload`).
+**Pitfall after extraction edits**: reset `entities_cache` (`DELETE FROM entities_cache;` after killing uvicorn — old rows return entities from heading-less text) and restart uvicorn (no `--reload`).
 
 ## Recent Changes (2026-08-10, deterministic article cleaner)
 
-Новый `services/article_cleaner.py` — детерминированная очистка текста ДО NER (regex, без LLM):
-- `clean_article_text()` удаляет: мету в начале (автор/дата/мин чтения, первые 10 строк), оглавление (первые 20, режим `skip_toc_block` по `^\d+\.\s+\w+`), теги/хештеги (последние 10), служебные кнопки **точными матчами** (`^(поделиться|share|...)\s*[.?:：→»›…]*$` — «Поделиться» удалится, «Поделиться опытом внедрения» — нет)
-- Склейка переносов `-\n` → `` через `HYPHEN_BREAK_RE` **до** разбиения на строки (фикс: наивная построчная склейка дублировала следующую строку)
-- Порог: текст < 100 символов возвращается as-is (защита сниппетов/обрывков) — тесты ТЗ с короткими текстами были удлинены до > 100
-- Константы: `META_SCAN_LINES=10`, `TOC_SCAN_LINES=20`, `TAG_SCAN_LINES=10`
-- Интеграция: `fetch_page_text()` (serp.py) — очистка всех страниц (user url + competitors); `analyzer.py` — `user_text` чистится **до** `sha1` (кэш-ключ от канонического текста)
-- При деплое обязателен сброс кэша: `DELETE FROM entities_cache;` (иначе старые записи вернут сущности из неочищенных текстов) + рестарт uvicorn
-- Тесты: `tests/test_article_cleaner.py` (11 шт.) — запуск `./venv/bin/python3 -m pytest tests/test_article_cleaner.py -v`. pytest установлен в venv проекта.
+New `services/article_cleaner.py` — deterministic text cleanup BEFORE NER (regex, no LLM):
+- `clean_article_text()` removes: leading meta (author/date/read time, first 10 lines), table of contents (first 20, `skip_toc_block` mode via `^\d+\.\s+\w+`), tags/hashtags (last 10), service buttons via **exact matches** (`^(поделиться|share|...)\s*[.?:：→»›…]*$` — «Поделиться» is removed, «Поделиться опытом внедрения» is not)
+- Glue `-\n` breaks → `` via `HYPHEN_BREAK_RE` **before** splitting into lines (fix: naive per-line gluing duplicated the next line)
+- Threshold: text < 100 chars is returned as-is (protects snippets/truncations) — spec tests with short texts were lengthened to > 100
+- Constants: `META_SCAN_LINES=10`, `TOC_SCAN_LINES=20`, `TAG_SCAN_LINES=10`
+- Integration: `fetch_page_text()` (serp.py) — cleans all pages (user URL + competitors); `analyzer.py` — `user_text` is cleaned **before** `sha1` (cache key derived from canonical text)
+- On deploy, cache reset is mandatory: `DELETE FROM entities_cache;` (otherwise old rows return entities from uncleaned texts) + restart uvicorn
+- Tests: `tests/test_article_cleaner.py` (11 items) — run `./venv/bin/python3 -m pytest tests/test_article_cleaner.py -v`. pytest is installed in the project venv.
 
 ## Recent Changes (2026-08-08, feat/openrouter-model-search)
 
@@ -420,26 +420,26 @@ PR #3 merged to main (`a8e0b6e`).
 11. **Empty competitor_description** — LLM may return gaps without descriptions. Fixed with `_find_entity_description()` enrichment in `gap_analyzer.py` + fallback in `entity_extractor.py`. Three-tier chain: LLM → competitor data → generated.
 12. **Pipeline timeout at 10min** — deepseek-v4-pro can be slow (30-40s per extraction). 20 pages × 30-40s ÷ semaphore 5 = 120-160s. Increased to 20min, reduced OpenRouter timeout to 30s.
 13. **Backend changes need MANUAL uvicorn restart** — backend runs WITHOUT `--reload` (reloader breaks imports, changes cwd to /tmp). After editing any backend file: kill the old uvicorn process, then `./venv/bin/python3 -m uvicorn main:app --host 0.0.0.0 --port 8000` (background). Symptom of stale backend: API works but new fields/logic missing (e.g. `competitor_pages[].entities` empty while entities_found > 0).
-14. **`provider.require_parameters` для JSON** (изучено 2026-08-10) — `response_format={"type":"json_object"}` уже стоит в entity_extractor/gap_analyzer, НО OpenRouter по умолчанию может роутить на эндпоинт, игнорирующий параметр (Claude и др.) → модель возвращает ```json фенсы → json.loads падает. Фикс: `provider={"require_parameters": True}` + defensive-парсер (strip фенсов). Полная выжимка — в скилле openrouter-api (секция «Structured outputs / JSON Schema»).
-15. **OpenRouter + VPN (eXpress) → «полумёртвое» соединение** (2026-08-10) — TCP ESTABLISHED к CF-IP openrouter.ai, данные не идут, процесс не ест CPU (симптом: анализ висит в `running/extracting` минутами; `lsof -nP -p <pid> -i` показывает ESTABLISHED к 104.18.x.x). SDK-таймаут `timeout=30` — per-operation, не общий дедлайн, поэтому спасает не всегда. Решение: `asyncio.wait_for(..., timeout=GAP_TIMEOUT_SECONDS=180)` вокруг gap-анализа + fallback `gaps=[]`, и try/except в `extract_for_page` (упавшая страница пропускается, отчёт строится по остальным). Диагностика: `sample <pid> 2`, `lsof`, `curl -m 10 https://openrouter.ai/api/v1/models`.
-16. **`progress` надо пробрасывать в AnalyzeStatus в роутере** (2026-08-10) — `get_analysis_status()` (db) возвращает `d["progress"]`, но если в `routers/analyzer.py::get_status` НЕ передать `progress=data.get("progress", {})` — API вернёт пустой прогресс при полной таблице `analysis_pages` (симптом: `/status` отдаёт `pages: []`, а `sqlite3 ... SELECT * FROM analysis_pages` полон). Pydantic-дефолт `{}` молча прячет баг.
-17. **Resilience-тесты трогают реальную БД после добавления db-вызовов в пайплайн** (2026-08-10) — как только `_run_pipeline` начал звать `register_pages`/`update_page`/`set_progress_meta`, `test_analyzer_resilience.py` упал с `no such table: analysis_pages` (продакшн-БД без миграции). Чинить: замокать эти три функции в `_patch_base` (не относятся к устойчивости).
+14. **`provider.require_parameters` for JSON** (learned 2026-08-10) — `response_format={"type":"json_object"}` is already set in entity_extractor/gap_analyzer, BUT OpenRouter by default may route to an endpoint that ignores the parameter (Claude etc.) → the model returns ```json fences → json.loads crashes. Fix: `provider={"require_parameters": True}` + a defensive parser (strip fences). Full digest — in the openrouter-api skill («Structured outputs / JSON Schema» section).
+15. **OpenRouter + VPN (eXpress) → «half-dead» connection** (2026-08-10) — TCP ESTABLISHED to the CF IP of openrouter.ai, no data flows, process eats no CPU (symptom: analysis hangs in `running/extracting` for minutes; `lsof -nP -p <pid> -i` shows ESTABLISHED to 104.18.x.x). The SDK `timeout=30` is per-operation, not a whole-request deadline, so it doesn't always save you. Fix: `asyncio.wait_for(..., timeout=GAP_TIMEOUT_SECONDS=180)` around gap analysis + fallback `gaps=[]`, and try/except in `extract_for_page` (a failed page is skipped, the report builds from the rest). Diagnostics: `sample <pid> 2`, `lsof`, `curl -m 10 https://openrouter.ai/api/v1/models`.
+16. **`progress` must be forwarded into AnalyzeStatus in the router** (2026-08-10) — `get_analysis_status()` (db) returns `d["progress"]`, but if `routers/analyzer.py::get_status` does NOT pass `progress=data.get("progress", {})` — the API returns empty progress while the `analysis_pages` table is full (symptom: `/status` returns `pages: []`, while `sqlite3 ... SELECT * FROM analysis_pages` is populated). The pydantic default `{}` silently hides the bug.
+17. **Resilience tests touch the real DB after db calls were added to the pipeline** (2026-08-10) — as soon as `_run_pipeline` started calling `register_pages`/`update_page`/`set_progress_meta`, `test_analyzer_resilience.py` failed with `no such table: analysis_pages` (production DB without migration). Fix: mock these three functions in `_patch_base` (they are not part of resilience behavior).
 
 ## Recent Changes (2026-08-10, per-page analysis progress)
 
-«Analyzing gaps..» висел невидимкой до ~4 мин: плоский `stage` скрывал (а) весь `extracting` (10-20 LLM-вызовов) и (б) внутри `analyzing` два последовательных LLM-вызова. По запросу пользователя сделана **прозрачность прогресса** (не ускорение).
+«Analyzing gaps..» sat invisible for up to ~4 min: the flat `stage` hid (a) the entire `extracting` (10-20 LLM calls) and (b) the two sequential LLM calls inside `analyzing`. At the user's request, **progress transparency** was added (not speed).
 
-- **Решение — БЕЗ JSON-блоба для страниц** (user-enforced): с семафором 5 корутины делали бы читай-модифицируй-пиши одного поля → потерянные апдейты (застрявшие `pending` = тот же UX-баг в другом месте). Вместо этого `analysis_pages` (PK `analysis_id+url`): каждая корутина point-UPDATE своей строки — race-free по конструкции. Метаданные `user_page`/`gap` — в `analyses.progress_meta` (JSON; пишутся только из главной корутины между gather — гонок нет).
-- `db.py`: `register_pages`, `update_page(id,url,step=,chars=,entities=)`, `set_progress_meta(id,dict)`; `get_analysis_status` собирает `progress={pages, ...meta}` (pages по порядку position).
-- `routers/analyzer.py`: регистрация страниц после searching; `fetch_text` → `fetching`→`done(chars)|failed`; `extract_for_page` → `extracting`→`done(entities)|failed`; user-страница → `user_step` extracting/done/failed/skipped + `user_entities`; gap → `gap_step` running/done/failed + `gap_user_n`/`gap_competitor_n`/`gap_count`.
-- `schemas.py`/`routers`: `AnalyzeStatus.progress: dict = {}`, проброс в `get_status` (см. pitfall 16).
-- Frontend: `AnalysisProgress`/`PageProgress` в `lib/api.ts`; `ReportSkeleton` на `fetching/extracting` — dense-лист статей (`#pos · hostname — title` + спиннер / ✓ N entities / ✗ failed, `Pages — 8/9`), на `analyzing` — StepRow'ы «Your page entities — N extracted» и «Gap analysis — comparing N competitor vs M user entities»; прогресс-бар учитывает долю готовых страниц. `report/[id]/page.tsx` хранит `progress` из каждого полла.
-- Тесты: `tests/test_progress.py` (17 passed всего). E2E вживую подтверждён (search→fetch→extract→analyze→completed) + UI показал лист статей и разведённые gap-шаги. tsc чист. Бэкенд перезапущен, миграции применены (таблица + колонка на месте).
+- **Solution — NO JSON blob for pages** (user-enforced): with semaphore=5, coroutines would read-modify-write one field → lost updates (stuck `pending` = the same UX bug elsewhere). Instead `analysis_pages` (PK `analysis_id+url`): each coroutine point-UPDATEs its own row — race-free by construction. `user_page`/`gap` metadata lives in `analyses.progress_meta` (JSON; written only from the main coroutine between gathers — no races).
+- `db.py`: `register_pages`, `update_page(id,url,step=,chars=,entities=)`, `set_progress_meta(id,dict)`; `get_analysis_status` assembles `progress={pages, ...meta}` (pages ordered by position).
+- `routers/analyzer.py`: page registration after searching; `fetch_text` → `fetching`→`done(chars)|failed`; `extract_for_page` → `extracting`→`done(entities)|failed`; user page → `user_step` extracting/done/failed/skipped + `user_entities`; gap → `gap_step` running/done/failed + `gap_user_n`/`gap_competitor_n`/`gap_count`.
+- `schemas.py`/`routers`: `AnalyzeStatus.progress: dict = {}`, forwarded in `get_status` (see pitfall 16).
+- Frontend: `AnalysisProgress`/`PageProgress` in `lib/api.ts`; `ReportSkeleton` on `fetching/extracting` — a dense article list (`#pos · hostname — title` + spinner / ✓ N entities / ✗ failed, `Pages — 8/9`), on `analyzing` — StepRows «Your page entities — N extracted» and «Gap analysis — comparing N competitor vs M user entities»; the progress bar uses the fraction of settled pages. `report/[id]/page.tsx` stores `progress` from each poll.
+- Tests: `tests/test_progress.py` (17 passed total). E2E confirmed live (search→fetch→extract→analyze→completed) + the UI showed the article list and separated gap steps. tsc clean. Backend restarted, migrations applied (table + column in place).
 
 ## Recent Changes (2026-08-10, resilient pipeline: gap fallback)
 
-При зависании/сбое LLM-вызовов анализ больше НЕ падает в `failed` — отчёт собирается с тем, что уже извлечено:
-- **`analyzer.py`**: `GAP_TIMEOUT_SECONDS = 180`; `analyze_gaps` обёрнут в `asyncio.wait_for` + `except → gaps=[]` (лог `[id] Gap analysis failed ... building report with available data`). UI получит completed-отчёт: сущности, граф, coverage, но пустые gaps/checklist.
-- **`analyzer.py`**: `extract_for_page` обёрнут в try/except — одна упавшая/зависшая страница пропускается (`entities=[]`), остальные извлекаются.
-- Кэш `entities_cache` не сбрасывается при рестарте — повторный анализ подхватит уже извлечённые страницы мгновенно.
-- Тесты: `tests/test_analyzer_resilience.py` (2 шт., моки без LLM): `test_gap_failure_still_builds_report`, `test_extract_failure_skips_only_broken_page`. Прогон: `./venv/bin/python3 -m pytest tests/ -q` → 15 passed (1 pre-existing error в test_prompts.py: хелпер назван `def test()` — pytest считает его тестом с фикстурой `name`; не трогать, файл жжёт реальные LLM-вызовы).
+When LLM calls hang/fail, the analysis no longer falls to `failed` — the report builds with what was already extracted:
+- **`analyzer.py`**: `GAP_TIMEOUT_SECONDS = 180`; `analyze_gaps` wrapped in `asyncio.wait_for` + `except → gaps=[]` (log `[id] Gap analysis failed ... building report with available data`). The UI gets a completed report: entities, graph, coverage, but empty gaps/checklist.
+- **`analyzer.py`**: `extract_for_page` wrapped in try/except — one failed/hung page is skipped (`entities=[]`), the rest still extract.
+- The `entities_cache` is not reset on restart — a re-analysis picks up already-extracted pages instantly.
+- Tests: `tests/test_analyzer_resilience.py` (2 items, mocks without LLM): `test_gap_failure_still_builds_report`, `test_extract_failure_skips_only_broken_page`. Run: `./venv/bin/python3 -m pytest tests/ -q` → 15 passed (1 pre-existing error in test_prompts.py: the helper is named `def test()` — pytest treats it as a test with a `name` fixture; don't touch, the file runs real LLM calls).

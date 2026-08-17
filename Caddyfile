@@ -1,7 +1,7 @@
-# HTTPS-termination: Caddy выпускает и обновляет Let's Encrypt автоматически.
-# SERPXRAY_DOMAIN подставляется из .env через {env.*}.
+# HTTPS termination: Caddy issues and renews Let's Encrypt automatically.
+# SERPXRAY_DOMAIN is substituted from .env via {env.*}.
 {$SERPXRAY_DOMAIN} {
-	# Безопасные заголовки
+	# Security headers
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
@@ -9,6 +9,6 @@
 		Referrer-Policy "no-referrer"
 	}
 
-	# Всё (включая /api/*) идёт на Next, который сам проксирует /api на backend
+	# Everything (including /api/*) goes to Next, which proxies /api to the backend itself
 	reverse_proxy frontend:3000
 }

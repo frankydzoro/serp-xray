@@ -72,7 +72,7 @@ def test_keep_main_content():
 
 
 def test_service_buttons_exact_match():
-    """Кнопки/виджеты (точное совпадение) удаляются."""
+    """Buttons/widgets (exact match) are removed."""
     text = """Основной текст статьи.
 Поделиться
 Читать далее →
@@ -89,7 +89,7 @@ def test_service_buttons_exact_match():
 
 
 def test_service_phrase_preserved():
-    """Осмысленные предложения, начинающиеся со служебных слов, НЕ удаляются."""
+    """Meaningful sentences starting with service words are NOT removed."""
     text = """Заголовок статьи
 
 Поделиться опытом внедрения очень полезно для команды.
@@ -104,13 +104,13 @@ def test_service_phrase_preserved():
 
 
 def test_short_text_unchanged():
-    """Текст короче 100 символов возвращается без изменений."""
+    """Text shorter than 100 chars is returned unchanged."""
     text = "Автор: Иван"
     assert clean_article_text(text) == text
 
 
 def test_inline_hyphen_preserved():
-    """Составное слово через дефис в одной строке не ломается."""
+    """A hyphenated compound word on one line is not broken."""
     text = """Это статья о красно-белом дизайне и его применении в веб-интерфейсах.
 Второй абзац с деталями и развёрнутыми пояснениями."""
 
@@ -134,7 +134,7 @@ This is a longer body text that exceeds the minimum threshold to trigger cleanin
 
 
 def test_real_article_smoke():
-    """Реальный markdown из Trafilatura: структура сохраняется, мусор режется."""
+    """Real markdown from Trafilatura: structure preserved, noise removed."""
     text = """# Заголовок статьи
 
 Автор: Иван Петров
@@ -162,14 +162,14 @@ def test_real_article_smoke():
 
     result = clean_article_text(text)
 
-    # Структура сохранена
+    # Structure preserved
     assert "# Заголовок статьи" in result
     assert "## Введение" in result
     assert "**жирным**" in result
     assert "| Колонка 1 |" in result
     assert "## Заключение" in result
 
-    # Мусор удалён
+    # Noise removed
     assert "Автор: Иван Петров" not in result
     assert "12 мая 2025" not in result
     assert "#SEO" not in result

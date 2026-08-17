@@ -13,14 +13,14 @@ logger = logging.getLogger(__name__)
 
 
 class SSRFError(RuntimeError):
-    """URL заблокирован SSRF-защитой (private/loopback/link-local IP и т.п.)."""
+    """URL blocked by SSRF protection (private/loopback/link-local IP, etc.)."""
 
 
 def _blocked_ip_reason(ip_str: str) -> Optional[str]:
-    """Возвращает причину блокировки IP или None, если адрес публичный.
+    """Returns the reason an IP is blocked, or None if the address is public.
 
-    Порядок важен: в Python 3.11 is_private=True у многих специальных
-    диапазонов (loopback/link-local), поэтому более точные классы — раньше.
+    Order matters: in Python 3.11 is_private=True for many special ranges
+    (loopback/link-local), so the more specific classes come first.
     """
     try:
         ip = ipaddress.ip_address(ip_str)
@@ -29,7 +29,7 @@ def _blocked_ip_reason(ip_str: str) -> Optional[str]:
     if ip.is_loopback:
         return "loopback"
     if ip.is_link_local or ip_str == "169.254.169.254":
-        return "link-local"  # включает cloud metadata (AWS/GCP)
+        return "link-local"  # includes cloud metadata (AWS/GCP)
     if ip.is_private:
         return "private"
     if ip.is_multicast:
@@ -50,17 +50,17 @@ def _is_ip_literal(host: str) -> bool:
 
 
 def resolve_and_pin(url_str: str) -> tuple[str, str]:
-    """SSRF-проверка + DNS pinning.
+    """SSRF check + DNS pinning.
 
-    Возвращает (pinned_url, hostname):
-      - резолвит hostname через getaddrinfo и проверяет ВСЕ вернувшиеся адреса
-        (A+AAAA, включая ::ffff:v4-mapped) на private/loopback/link-local/etc;
-      - IP-литералы в URL проверяются напрямую, без резолва;
-      - pinned_url = scheme://<проверенный IP>/path — HTTP-клиент соединяется
-        с конкретным IP, а НЕ пере-резолвит hostname внутри себя (закрывает
-        главное окно DNS rebinding между проверкой и коннектом).
+    Returns (pinned_url, hostname):
+      - resolves the hostname via getaddrinfo and checks ALL returned addresses
+        (A+AAAA, including ::ffff:v4-mapped) for private/loopback/link-local/etc;
+      - IP literals in the URL are checked directly, without resolution;
+      - pinned_url = scheme://<verified IP>/path — the HTTP client connects to
+        a specific IP and does NOT re-resolve the hostname internally (closes the
+        main DNS rebinding window between check and connect).
 
-    Raises: SSRFError с причиной блокировки.
+    Raises: SSRFError with the block reason.
     """
     parsed = urlsplit(url_str)
     scheme = parsed.scheme.lower()
@@ -95,7 +95,7 @@ def resolve_and_pin(url_str: str) -> tuple[str, str]:
             reason = _blocked_ip_reason(addr)
             if reason:
                 raise SSRFError(f"Blocked host {host}: resolves to {addr} ({reason} IP)")
-        # Предпочитаем IPv4 (первый из набора), иначе первый AAAA
+        # Prefer IPv4 (first in the set), otherwise the first AAAA
         ip = next((a for a in addrs if ":" not in a), next(iter(addrs)))
 
     host_part = f"[{ip}]" if ":" in ip else ip
@@ -109,16 +109,16 @@ def resolve_and_pin(url_str: str) -> tuple[str, str]:
 
 
 async def _safe_get(client: httpx.AsyncClient, url: str, headers: dict, max_hops: int = 5) -> httpx.Response:
-    """GET с SSRF-проверкой каждого хопа и ручной обработкой редиректов.
+    """GET with an SSRF check on every hop and manual redirect handling.
 
-    follow_redirects=False на клиенте — каждый redirect-хоп заново проходит
-    resolve_and_pin (редирект на internal-адрес блокируется)."""
+    follow_redirects=False on the client — each redirect hop re-runs resolve_and_pin
+    (a redirect to an internal address is blocked)."""
     current = url
     for _ in range(max_hops + 1):
         pinned, host = resolve_and_pin(current)
         req_headers = dict(headers)
         req_headers["Host"] = host
-        # Для https соединение идёт на IP, но SNI и проверка сертификата — по исходному hostname
+        # For https the connection goes to the IP, but SNI and cert validation use the original hostname
         extensions = {"sni_hostname": host} if pinned.startswith("https://") else None
         resp = await client.get(pinned, headers=req_headers, extensions=extensions)
         if resp.status_code in (301, 302, 303, 307, 308):
@@ -135,12 +135,12 @@ async def _safe_get(client: httpx.AsyncClient, url: str, headers: dict, max_hops
 
 
 async def fetch_serp(query: str, engine: str = "google", num: int = 20) -> list[dict]:
-    """Возвращает organic results из SerpAPI для указанного движка.
+    """Returns organic results from SerpAPI for the given engine.
 
     Args:
-        query: поисковый запрос
-        engine: 'google' или 'yandex'
-        num: количество результатов
+        query: the search query
+        engine: 'google' or 'yandex'
+        num: number of results
 
     Returns:
         [{url, title, snippet, position, engine}, ...]
@@ -183,7 +183,7 @@ async def _fetch_google(query: str, num: int) -> list[dict]:
 async def _fetch_yandex(query: str, num: int) -> list[dict]:
     params = {
         "api_key": SERPAPI_API_KEY,
-        "text": query,        # Yandex использует "text", не "q"
+        "text": query,        # Yandex uses "text", not "q"
         "num": min(num, 20),
         "engine": "yandex",
         "yandex_domain": "yandex.ru",
@@ -211,12 +211,12 @@ async def _fetch_yandex(query: str, num: int) -> list[dict]:
 
 
 async def fetch_top20(query: str, engine: str = "google", num: int = None) -> list[dict]:
-    """Возвращает топ-N результатов из одного или обоих движков.
+    """Returns the top-N results from one or both engines.
 
     Args:
-        query: поисковый запрос
-        engine: 'google', 'yandex', или 'both'
-        num: количество результатов на движок
+        query: the search query
+        engine: 'google', 'yandex', or 'both'
+        num: number of results per engine
     """
     if num is None:
         num = DEFAULT_SERP_RESULTS
@@ -226,7 +226,7 @@ async def fetch_top20(query: str, engine: str = "google", num: int = None) -> li
             _fetch_google(query, num),
             _fetch_yandex(query, num),
         )
-        # Объединяем, дедуплицируем по URL, чередуем
+        # Merge, dedupe by URL, interleave
         seen_urls = set()
         merged = []
         for pair in zip(g_results, y_results):
@@ -234,7 +234,7 @@ async def fetch_top20(query: str, engine: str = "google", num: int = None) -> li
                 if r["url"] not in seen_urls:
                     seen_urls.add(r["url"])
                     merged.append(r)
-        # Добавляем оставшиеся (если разное количество)
+        # Add the leftovers (if the counts differ)
         for lst in (g_results, y_results):
             for r in lst:
                 if r["url"] not in seen_urls:
@@ -246,13 +246,13 @@ async def fetch_top20(query: str, engine: str = "google", num: int = None) -> li
 
 
 async def fetch_page_text(url: str, timeout: int = 15) -> str:
-    """Извлекает основной контент страницы как Markdown (структура сохраняется).
+    """Extracts the main page content as Markdown (structure preserved).
 
-    Каскад: Trafilatura (favor_recall) -> quality gate -> BS4 structural -> raw.
-    Заголовки/списки/таблицы сохраняются (#, -, |table|) — LLM видит структуру.
+    Cascade: Trafilatura (favor_recall) → quality gate → BS4 structural → raw.
+    Headings/lists/tables are preserved (#, -, |table|) — the LLM sees the structure.
 
-    Безопасность: запрос идёт через _safe_get — SSRF-проверка каждого
-    redirect-хопа + DNS pinning (соединение на проверенный IP, не пере-резолв).
+    Security: the request goes through _safe_get — an SSRF check on every redirect
+    hop + DNS pinning (connects to the verified IP, no re-resolution).
     """
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; SerpXray/1.0)"

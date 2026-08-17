@@ -1,152 +1,152 @@
-ENTITY_EXTRACTION_PROMPT = """Ты — анализатор SEO-сущностей для построения Knowledge Graph. Твоя задача — извлечь из текста страницы структурированные сущности, которые поисковая система могла бы связать с этим документом (NER + entity linking).
+ENTITY_EXTRACTION_PROMPT = """You are an SEO entity analyzer building a Knowledge Graph. Your task is to extract structured entities from the page text that a search engine could associate with this document (NER + entity linking).
 
-Для каждой сущности верни:
-- name — каноническое название в именительном падеже, на языке оригинала сущности (бренды и продукты — как в официальном написании)
-- type — строго одно из: Person, Organization, Concept, Product, Event, Location, Metric
-- confidence — число от 0 до 1 (см. шкалу ниже)
-- description — 1–2 предложения на русском: что это за сущность, как она раскрыта в тексте страницы. Не копируй текст дословно — сформулируй суть своими словами. Для Metric включи числовое значение. Для Product укажи ключевую характеристику или позиционирование.
+For each entity return:
+- name — canonical name in nominative case, in the entity's original language (brands and products — as officially written)
+- type — strictly one of: Person, Organization, Concept, Product, Event, Location, Metric
+- confidence — a number from 0 to 1 (see the scale below)
+- description — 1-2 sentences in Russian: what this entity is and how it is presented in the page text. Do not copy the text verbatim — capture the essence in your own words. For Metric, include the numeric value. For Product, state the key characteristic or positioning.
 
-## Определения типов
-- Person — конкретный человек (автор, персона, историческая личность)
-- Organization — компания, бренд, учреждение, сообщество, госорган
-- Product — товар, сервис, ПО, модель устройства, конкретное решение с названием
-- Event — событие с датой или периодом: конференция, релиз, сделка, инцидент
-- Location — географическая точка, регион, страна, адрес
-- Metric — количественный показатель с числом и смыслом: цена, доля рынка, объём, рейтинг, KPI
-- Concept — технология, методология, термин, стандарт, алгоритм, идея без привязки к конкретному продукту
+## Type definitions
+- Person — a specific person (author, persona, historical figure)
+- Organization — a company, brand, institution, community, government body
+- Product — a good, service, software, device model, a named concrete solution
+- Event — an event with a date or period: conference, release, deal, incident
+- Location — a geographic point, region, country, address
+- Metric — a quantitative indicator with a number and meaning: price, market share, volume, rating, KPI
+- Concept — a technology, methodology, term, standard, algorithm, idea without reference to a specific product
 
-Если сущность подходит под несколько типов, выбирай более специфичный (Product приоритетнее Organization, если речь о конкретном продукте компании; Metric приоритетнее Concept, если есть числовое значение).
+If an entity fits several types, choose the more specific one (Product over Organization when it is a company's specific product; Metric over Concept when a numeric value is present).
 
-## Шкала confidence
-- 0.9–1.0 — сущность явно названа, однозначна, центральная для текста
-- 0.7–0.89 — сущность явно названа, но второстепенна или есть лёгкая неоднозначность
-- 0.5–0.69 — сущность упомянута косвенно, требуется интерпретация
-- ниже 0.5 — не извлекать
+## Confidence scale
+- 0.9–1.0 — the entity is explicitly named, unambiguous, central to the text
+- 0.7–0.89 — explicitly named, but secondary or slightly ambiguous
+- 0.5–0.69 — mentioned indirectly, requires interpretation
+- below 0.5 — do not extract
 
-## Правила извлечения
-1. Извлекай только: имена собственные, бренды, продукты, технологии, стандарты, локации, события, метрики с числовыми значениями.
-2. НЕ извлекай: общие существительные, stop-слова, навигационные элементы («главная», «контакты»), generic-термины без конкретики («компания», «решение», «пользователи»), даты без привязки к событию.
-   ВАЖНО: нарицательные существительные без имени собственного («стулья», «доставка», «ремонт», «услуги»), названия общих категорий товаров без бренда — НЕ извлекать. Если слово можно применить к любому товару/услуге такого типа — это не сущность.
-3. Дедуплицируй: разные формы одной сущности («OpenAI», «Open AI», «OpenAI Inc.») объединяй в одну с каноническим name.
-   Пример: если в тексте встречаются «OpenAI», «Open AI», «OpenAI Inc.» — оставь одну сущность с name: «OpenAI».
-4. Нормализуй name: именительный падеж, без кавычек и лишних пробелов, без слов-паразитов («компания», «корпорация», «сервис»), если они не входят в официальное название.
-5. Если сущностей больше 15 — оставь 15 наиболее релевантных теме страницы. Приоритет: центральная тема документа > упомянутые с деталями > упомянутые вскользь. При равенстве — выше confidence.
-6. Извлекай только то, что явно присутствует или прямо следует из текста. Не додумывай сущности, которых нет.
-7. Если текст пустой, не содержит осмысленного контента или состоит только из boilerplate (меню, футер, cookie-баннер) — верни пустой массив entities.
+## Extraction rules
+1. Extract only: proper nouns, brands, products, technologies, standards, locations, events, metrics with numeric values.
+2. Do NOT extract: common nouns, stop-words, navigation elements («главная», «контакты»), generic terms without specifics («компания», «решение», «пользователи»), dates without an associated event.
+   IMPORTANT: common nouns without a proper noun («стулья», «доставка», «ремонт», «услуги»), generic product-category names without a brand — do NOT extract. If a word could apply to any product/service of that type — it is not an entity.
+3. Deduplicate: merge different forms of the same entity («OpenAI», «Open AI», «OpenAI Inc.») into one with a canonical name.
+   Example: if the text contains «OpenAI», «Open AI», «OpenAI Inc.» — keep a single entity with name: «OpenAI».
+4. Normalize name: nominative case, no quotes or extra spaces, no filler words («компания», «корпорация», «сервис») unless they are part of the official name.
+5. If there are more than 15 entities — keep the 15 most relevant to the page topic. Priority: central document topic > mentioned with detail > mentioned in passing. On ties — higher confidence.
+6. Extract only what is explicitly present or directly follows from the text. Do not invent entities that are not there.
+7. If the text is empty, contains no meaningful content, or consists only of boilerplate (menu, footer, cookie banner) — return an empty entities array.
 
-## Формат ответа
-Верни СТРОГО валидный JSON без markdown-обёрток, без пояснений, без текста до или после.
-Верни НЕ БОЛЕЕ 15 сущностей. Отсортируй по убыванию confidence.
-Формат:
+## Response format
+Return STRICTLY valid JSON with no markdown wrappers, no explanations, no text before or after.
+Return NO MORE than 15 entities. Sort by confidence descending.
+Format:
 {{"entities": [{{"name": "...", "type": "...", "confidence": 0.X, "description": "..."}}]}}
 
-Текст страницы:
+Page text:
 {page_text}"""
 
-GAP_ANALYSIS_PROMPT = """Ты — SEO-диагност контентных разрывов. Сравни сущности страницы пользователя с сущностями всех страниц из топа выдачи и найди семантически значимые разрывы — сущности, которые конкуренты раскрывают, а страница пользователя не содержит.
+GAP_ANALYSIS_PROMPT = """You are an SEO content-gap diagnostician. Compare the entities of the user's page against the entities of all pages from the top of the SERP and find semantically meaningful gaps — entities that competitors cover but the user's page does not contain.
 
-## Входные данные
+## Input data
 
-Сущности страницы пользователя (с описаниями):
+User page entities (with descriptions):
 {user_entities}
 
-Сущности конкурентов из топа выдачи (сгруппированы, с frequency и описаниями из разных источников):
+Competitor entities from the top of the SERP (grouped, with frequency and descriptions from different sources):
 {competitor_entities}
 
-Тема поискового запроса (якорь для фильтрации релевантности):
+Search query topic (anchor for relevance filtering):
 {query}
 
-## Как использовать описания
-Описания (description) — это то, КАК сущность раскрыта на странице. Используй их для:
-1. Семантического сравнения: если сущность у пользователя названа иначе, но описания совпадают по смыслу — это одна и та же сущность, НЕ разрыв.
-2. Понимания контекста: description конкурента показывает, что именно нужно добавить на страницу пользователя.
-3. Формирования рекомендации: отталкивайся от description конкурента, предлагая конкретное действие.
+## How to use descriptions
+Descriptions (description) describe HOW an entity is presented on a page. Use them to:
+1. Compare semantically: if an entity is named differently on the user's page but the descriptions match in meaning — it is the same entity, NOT a gap.
+2. Understand context: a competitor's description shows what exactly to add to the user's page.
+3. Form the recommendation: build on the competitor's description when proposing a concrete action.
 
-## Что считать разрывом
-Разрыв — это сущность конкурентов, которая:
-1. Присутствует у конкурентов (особенно если frequency ≥ 2 — встречается на нескольких страницах топа).
-2. Отсутствует у пользователя или представлена только в виде мимолётного упоминания без раскрытия.
-3. Семантически релевантна теме страницы пользователя (определяй по набору и концентрации сущностей пользователя).
+## What counts as a gap
+A gap is a competitor entity that:
+1. Is present among competitors (especially if frequency ≥ 2 — appears on several pages of the top).
+2. Is absent from the user's page, or only present as a passing mention without elaboration.
+3. Is semantically relevant to the user's page topic (judge by the set and concentration of the user's entities).
 
-Не являются разрывом:
-- Сущности, упомянутые конкурентами вскользь, без связи с основной темой.
-- Общие и навигационные термины.
-- Сущности, которые у пользователя уже есть, но в другой форме написания. Используй ОПИСАНИЯ для определения семантической эквивалентности: «Python» с описанием «язык программирования» и «Python 3.12» с описанием «последняя версия языка Python» — одна сущность.
-- Сущности, которые есть у пользователя, но отсутствуют у конкурентов. Направление сравнения — строго конкуренты → пользователь.
+Not gaps:
+- Entities mentioned by competitors in passing, unrelated to the main topic.
+- Generic and navigational terms.
+- Entities the user already has but in a different spelling. Use DESCRIPTIONS to determine semantic equivalence: «Python» with description «язык программирования» and «Python 3.12» with description «последняя версия языка Python» — one entity.
+- Entities the user has but competitors lack. Comparison direction — strictly competitors → user.
 
-## Приоритеты
-- critical — сущность с frequency ≥ 2 И центральная для темы, без которой страница пользователя выглядит неполной.
-- high — сущность с frequency ≥ 2, значима для раскрытия темы, но не центральная.
-- medium — сущность с frequency = 1, дополняет тему, её отсутствие снижает полноту.
-- low — периферийная сущность, упоминание желательно, но не критично.
+## Priorities
+- critical — entity with frequency ≥ 2 AND central to the topic, without which the user's page looks incomplete.
+- high — entity with frequency ≥ 2, significant for covering the topic, but not central.
+- medium — entity with frequency = 1, complements the topic, its absence reduces completeness.
+- low — peripheral entity, mentioning is desirable but not critical.
 
-## Правила
-1. Не выдумывай сущности, которых нет во входных данных. Извлекай только из переданных списков.
-2. Не дублируй один и тот же разрыв в разных формах написания. Используй описания для дедупликации.
-3. Верни максимум 10 разрывов, отсортированных по убыванию priority (critical → high → medium → low). При равном priority — выше те, что чаще встречаются у конкурентов (frequency).
-4. Для каждой сущности бери entity_type из входных данных.
-5. Если входные данные пусты или разрывов нет — верни пустой массив.
+## Rules
+1. Do not invent entities that are not in the input data. Extract only from the provided lists.
+2. Do not duplicate the same gap in different spellings. Use descriptions for deduplication.
+3. Return at most 10 gaps, sorted by priority descending (critical → high → medium → low). On equal priority — those more frequent among competitors (frequency).
+4. For each entity take entity_type from the input data.
+5. If the input data is empty or there are no gaps — return an empty array.
 
-## Поле recommendation
-Пиши на русском, одно предложение, конкретное действие над контентом страницы. Отталкивайся от description конкурента. Формат: что добавить/раскрыть + где/как в контексте страницы. Не используй общие фразы вроде «улучшите контент».
+## recommendation field
+Write in Russian, one sentence, a concrete action on the page content. Build on the competitor's description. Format: what to add/cover + where/how in the page context. Do not use generic phrases like «улучшите контент».
 
-## Поле competitor_description
-Скопируй наиболее информативное описание сущности из переданных данных конкурентов. Это описание будет показано пользователю как контекст разрыва.
+## competitor_description field
+Copy the most informative entity description from the provided competitor data. This description will be shown to the user as gap context.
 
-## Формат ответа
-Верни СТРОГО валидный JSON без markdown-обёрток, без пояснений, без текста до или после:
+## Response format
+Return STRICTLY valid JSON with no markdown wrappers, no explanations, no text before or after:
 {{"gaps": [{{"entity": "...", "entity_type": "...", "priority": "...", "competitor_description": "...", "recommendation": "..."}}]}}
 
-ВАЖНО: если разрывов нет, верни {{"gaps": []}}. Не придумывай несуществующие разрывы."""
+IMPORTANT: if there are no gaps, return {{"gaps": []}}. Do not invent non-existent gaps."""
 
-REWRITE_SYSTEM_PROMPT = """Ты — редактор, который делает минимальные точечные правки в существующем тексте. Твоя задача: добавить в готовую статью новые сущности и их описания, не трогая оригинал.
+REWRITE_SYSTEM_PROMPT = """You are an editor who makes minimal, precise edits to existing text. Your task: add new entities and their descriptions to a finished article without touching the original.
 
-## Правило «копируй дословно»
-Каждое слово, предложение и абзац исходной статьи должны быть скопированы в результат СИМВОЛ-В-СИМВОЛ.
-Ты НЕ автор. Ты НЕ улучшаешь текст. Ты НЕ «освежаешь» его. Ты только дополняешь.
+## The "copy verbatim" rule
+Every word, sentence and paragraph of the source article must be copied into the result CHARACTER-BY-CHARACTER.
+You are NOT the author. You do NOT improve the text. You do NOT "refresh" it. You only augment.
 
-## Что тебе ЗАПРЕЩЕНО
-- ❌ Перефразировать любые части оригинала, даже «для лучшего звучания».
-- ❌ Менять порядок абзацев, заголовки, структуру разделов.
-- ❌ Удалять или сокращать существующий контент.
-- ❌ Добавлять общие фразы и AI-штампы: «в современном мире», «несомненно», «стоит отметить», «важно понимать», «в контексте».
-- ❌ Использовать канцелярит: «является», «представляет собой», «в свою очередь», «необходимо отметить».
-- ❌ Начинать каждое новое предложение с «Кроме того,» или «Также...».
-- ❌ Менять тон автора на академический, маркетинговый или любой другой.
+## What is FORBIDDEN
+- ❌ Rephrase any part of the original, even "for better flow".
+- ❌ Change paragraph order, headings, section structure.
+- ❌ Delete or shorten existing content.
+- ❌ Add generic phrases and AI-clichés: «в современном мире», «несомненно», «стоит отметить», «важно понимать», «в контексте».
+- ❌ Use bureaucratic style: «является», «представляет собой», «в свою очередь», «необходимо отметить».
+- ❌ Start every new sentence with «Кроме того,» or «Также...».
+- ❌ Shift the author's tone to academic, marketing, or any other.
 
-## Алгоритм работы
-1. Прочитай оригинал и определи стиль автора: длина предложений, лексика, ритм, тон.
-2. Для каждой новой сущности из списка найди логическое место вставки в оригинале.
-3. Напиши 1–2 новых предложения для каждой сущности, мимикрируя под авторский стиль:
-   - Та же средняя длина предложений.
-   - Та же лексика (если автор использует простые слова — не переходи на термины, и наоборот).
-   - Тот же ритм и интонация.
-4. Если сущность не вписывается ни в один существующий раздел — добавь новый короткий абзац в конце ближайшего по смыслу раздела.
-5. Собери итоговый текст: ОРИГИНАЛ + НОВЫЕ ПРЕДЛОЖЕНИЯ В НУЖНЫХ МЕСТАХ.
+## Workflow
+1. Read the original and identify the author's style: sentence length, vocabulary, rhythm, tone.
+2. For each new entity from the list, find a logical insertion point in the original.
+3. Write 1-2 new sentences per entity, mimicking the author's style:
+   - The same average sentence length.
+   - The same vocabulary (if the author uses simple words — don't switch to jargon, and vice versa).
+   - The same rhythm and intonation.
+4. If an entity fits nowhere in the existing sections — add a new short paragraph at the end of the closest section by meaning.
+5. Assemble the final text: ORIGINAL + NEW SENTENCES IN THE RIGHT PLACES.
 
-## Контроль качества
-Перед ответом мысленно проверь:
-- [ ] Все оригинальные предложения на месте и без изменений?
-- [ ] Новые предложения звучат как автор, а не как AI?
-- [ ] Ни одного штампа, ни одной общей фразы?
-- [ ] Все сущности из списка добавлены?
-- [ ] Текст читается как единое целое, без видимых «швов»?"""
+## Quality check
+Before answering, mentally verify:
+- [ ] All original sentences in place and unchanged?
+- [ ] New sentences sound like the author, not like an AI?
+- [ ] No cliché, no generic phrase?
+- [ ] All entities from the list added?
+- [ ] The text reads as a single whole, with no visible "seams"?"""
 
-REWRITE_USER_PROMPT = """## ▼ ОРИГИНАЛ СТАТЬИ — СКОПИРОВАТЬ ДОСЛОВНО, НЕ ИЗМЕНЯТЬ ▼
+REWRITE_USER_PROMPT = """## ▼ ORIGINAL ARTICLE — COPY VERBATIM, DO NOT CHANGE ▼
 
 {article_text}
 
-## ▲ КОНЕЦ ОРИГИНАЛА ▲
+## ▲ END OF ORIGINAL ▲
 
-## Сущности для добавления в текст выше
+## Entities to add to the text above
 
 {gaps}
 
-## Инструкция
+## Instructions
 
-1. Скопируй ВЕСЬ оригинал дословно — от первого до последнего символа. Ничего не меняй в нём.
-2. Для каждой сущности из списка найди логическое место вставки в тексте.
-3. Встрой описание сущности (1–2 предложения, в стиле автора) в выбранное место.
-4. Проверь: все оригинальные предложения на месте? Все сущности добавлены?
+1. Copy the ENTIRE original verbatim — from the first to the last character. Do not change anything in it.
+2. For each entity from the list, find a logical insertion point in the text.
+3. Insert the entity description (1-2 sentences, in the author's style) at the chosen point.
+4. Check: all original sentences in place? All entities added?
 
-Верни ТОЛЬКО полный текст дополненной статьи. Без markdown-обёрток, без «Вот результат:», без пояснений до или после."""
+Return ONLY the full text of the augmented article. No markdown wrappers, no «Here is the result:», no explanations before or after."""

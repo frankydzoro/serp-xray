@@ -125,7 +125,7 @@ export default function ReportSkeleton({ analysisId, stage, progress }: Props) {
   const showPages = (stage === "fetching" || stage === "extracting") && pages.length > 0;
   const showAnalyzing = stage === "analyzing";
 
-  // Ширина прогресс-бара: внутри fetching/extracting учитываем долю готовых страниц
+  // Progress bar width: inside fetching/extracting account for the fraction of settled pages
   let stageFraction = 0.3;
   if (pages.length > 0) stageFraction = settledPages / pages.length;
   if (stage === "done") stageFraction = 1;

@@ -3,14 +3,14 @@ services:
     build: ./backend
     env_file: .env
     environment:
-      # За прокси (Next rewrites) все запросы приходят с одного internal IP —
-      # для rate limit читаем реального клиента из X-Forwarded-For
+      # Behind the proxy (Next rewrites) all requests come from one internal IP —
+      # for the rate limit, read the real client from X-Forwarded-For
       SERPXRAY_TRUST_PROXY: "1"
       SERPXRAY_CORS_ORIGINS: ""
     volumes:
-      - serp_data:/app/data          # SQLite переживает рестарты
+      - serp_data:/app/data          # SQLite survives restarts
     expose:
-      - "8000"                       # НЕ публикуем наружу: доступ только из Docker-сети
+      - "8000"                       # NOT published externally: access only from the Docker network
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
       interval: 30s
@@ -22,7 +22,7 @@ services:
   frontend:
     build: ./frontend
     environment:
-      # Next rewrites: /api/* → backend (внутри Docker-сети)
+      # Next rewrites: /api/* → backend (inside the Docker network)
       BACKEND_URL: http://backend:8000
     depends_on:
       backend:
@@ -37,8 +37,8 @@ services:
       start_period: 20s
     restart: unless-stopped
 
-  # HTTPS обязателен: без него пароль и токен идут открытым текстом.
-  # Caddy сам выпускает Let's Encrypt сертификат для SERPXRAY_DOMAIN.
+  # HTTPS is mandatory: without it the password and token travel in cleartext.
+  # Caddy issues the Let's Encrypt cert for SERPXRAY_DOMAIN itself.
   caddy:
     image: caddy:2-alpine
     ports:

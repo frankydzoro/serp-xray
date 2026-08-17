@@ -41,8 +41,8 @@ def init_db():
             extracted_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
-        -- Постраничный прогресс анализа: point-апдейты из конкурентных корутин,
-        -- race condition невозможен — каждая строка обновляется только своей корутиной
+        -- Per-page analysis progress: point-updates from concurrent coroutines;
+        -- a race condition is impossible — each row is updated only by its own coroutine
         CREATE TABLE IF NOT EXISTS analysis_pages (
             analysis_id TEXT NOT NULL,
             url TEXT NOT NULL,
@@ -56,9 +56,9 @@ def init_db():
             PRIMARY KEY (analysis_id, url)
         );
 
-        -- Авторизация: сессионные токены (хранится ТОЛЬКО sha256 токена, не сам токен).
-        -- password_sha — хэш текущего пароля из env: смена пароля мгновенно
-        -- инвалидирует все старые сессии без ручной чистки (сравнение при каждом запросе).
+        -- Auth: session tokens (only the sha256 of the token is stored, not the token itself).
+        -- password_sha — hash of the current env password: changing the password instantly
+        -- invalidates all old sessions without manual cleanup (compared on every request).
         CREATE TABLE IF NOT EXISTS auth_sessions (
             token_hash TEXT PRIMARY KEY,
             password_sha TEXT NOT NULL,
@@ -66,14 +66,14 @@ def init_db():
             expires_at TEXT NOT NULL
         );
 
-        -- Индексы
+        -- Indexes
         CREATE INDEX IF NOT EXISTS idx_analyses_created
             ON analyses(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_entities_cache_extracted
             ON entities_cache(extracted_at);
     """)
 
-    # Миграция: добавляем колонки если их нет
+    # Migration: add columns if they don't exist
     try:
         conn.execute("ALTER TABLE analyses ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'")
     except sqlite3.OperationalError:
@@ -103,8 +103,8 @@ def init_db():
     except sqlite3.OperationalError:
         pass
     try:
-        # Метаданные прогресса (user_page / gap). Пишется ТОЛЬКО из главной корутины
-        # пайплайна между стадиями — конкурентности нет, поэтому JSON безопасен.
+        # Progress metadata (user_page / gap). Written ONLY from the main pipeline
+        # coroutine between stages — no concurrency, so JSON is safe.
         conn.execute("ALTER TABLE analyses ADD COLUMN progress_meta TEXT NOT NULL DEFAULT '{}'")
     except sqlite3.OperationalError:
         pass
@@ -119,7 +119,7 @@ def create_running_analysis(
     model: str,
     url: str | None = None,
 ) -> None:
-    """Создаёт запись анализа со статусом running."""
+    """Creates an analysis record with status=running."""
     conn = get_connection()
     conn.execute(
         "INSERT INTO analyses (id, query, url, model_used, result_json, status, stage) VALUES (?, ?, ?, ?, '{}', 'running', 'searching')",
@@ -130,7 +130,7 @@ def create_running_analysis(
 
 
 def update_analysis_status(analysis_id: str, stage: str) -> None:
-    """Обновляет стадию без изменения статуса."""
+    """Updates the stage without changing the status."""
     conn = get_connection()
     conn.execute(
         "UPDATE analyses SET stage = ? WHERE id = ?", (stage, analysis_id)
@@ -140,7 +140,7 @@ def update_analysis_status(analysis_id: str, stage: str) -> None:
 
 
 def register_pages(analysis_id: str, pages: list[dict]) -> None:
-    """Регистрирует страницы-конкуренты со статусом pending (до fetch/execute)."""
+    """Registers competitor pages with status=pending (before fetch/extract)."""
     conn = get_connection()
     conn.executemany(
         """INSERT OR IGNORE INTO analysis_pages
@@ -168,7 +168,7 @@ def update_page(
     chars: int | None = None,
     entities: int | None = None,
 ) -> None:
-    """Point-апдейт одной строки analysis_pages. Без read-modify-write."""
+    """Point-update of a single analysis_pages row. No read-modify-write."""
     sets = ["updated_at = datetime('now')"]
     params: list = []
     if step is not None:
@@ -191,8 +191,8 @@ def update_page(
 
 
 def set_progress_meta(analysis_id: str, meta: dict) -> None:
-    """Обновляет progress_meta (user_page / gap). Безопасно: вызывается только
-    из главной корутины пайплайна (после asyncio.gather), гонок нет."""
+    """Updates progress_meta (user_page / gap). Safe: called only from the main
+    pipeline coroutine (after asyncio.gather), no races."""
     conn = get_connection()
     row = conn.execute(
         "SELECT progress_meta FROM analyses WHERE id = ?", (analysis_id,)
@@ -213,7 +213,7 @@ def set_progress_meta(analysis_id: str, meta: dict) -> None:
 
 
 def complete_analysis(analysis_id: str, result: dict) -> None:
-    """Завершает анализ: сохраняет результат, ставит status=completed."""
+    """Completes the analysis: saves the result, sets status=completed."""
     conn = get_connection()
     conn.execute(
         "UPDATE analyses SET result_json = ?, status = 'completed', stage = 'done' WHERE id = ?",
@@ -224,7 +224,7 @@ def complete_analysis(analysis_id: str, result: dict) -> None:
 
 
 def fail_analysis(analysis_id: str, error: str) -> None:
-    """Помечает анализ как failed."""
+    """Marks the analysis as failed."""
     conn = get_connection()
     conn.execute(
         "UPDATE analyses SET result_json = ?, status = 'failed', stage = 'error' WHERE id = ?",
@@ -235,7 +235,7 @@ def fail_analysis(analysis_id: str, error: str) -> None:
 
 
 def get_analysis_status(analysis_id: str, timeout_minutes: int = 20) -> dict | None:
-    """Возвращает статус, stage и прогресс анализа. Автоматически помечает как failed при таймауте."""
+    """Returns the status, stage and progress of an analysis. Auto-marks as failed on timeout."""
     conn = get_connection()
     row = conn.execute(
         "SELECT id, status, stage, result_json, created_at, progress_meta FROM analyses WHERE id = ?",
@@ -250,7 +250,7 @@ def get_analysis_status(analysis_id: str, timeout_minutes: int = 20) -> dict | N
     except (json.JSONDecodeError, KeyError):
         d["result_json"] = {}
 
-    # Постраничный прогресс: статьи + метаданные (user_page / gap)
+    # Per-page progress: articles + metadata (user_page / gap)
     pages = conn.execute(
         """SELECT url, title, position, engine, step, chars, entities
            FROM analysis_pages
@@ -265,7 +265,7 @@ def get_analysis_status(analysis_id: str, timeout_minutes: int = 20) -> dict | N
     d["progress"] = {"pages": [dict(p) for p in pages], **meta}
     d.pop("progress_meta", None)
 
-    # Таймаут для застрявших анализов
+    # Timeout for stuck analyses
     if d["status"] == "running":
         try:
             created_at = datetime.fromisoformat(d["created_at"]).replace(tzinfo=timezone.utc)
@@ -293,7 +293,7 @@ def save_analysis(
     model: str,
     url: str | None = None,
 ) -> None:
-    """Совместимость: сохраняет завершённый анализ (старый интерфейс)."""
+    """Compat: saves a completed analysis (legacy interface)."""
     complete_analysis(analysis_id, result)
 
 
@@ -405,7 +405,7 @@ REWRITE_TIMEOUT_MINUTES = 10
 
 
 def start_rewrite(analysis_id: str) -> str | None:
-    """Помечает rewrite как running. Возвращает rewrite_started_at (ISO) или None, если анализ не найден."""
+    """Marks a rewrite as running. Returns rewrite_started_at (ISO) or None if the analysis was not found."""
     started_at = datetime.now(timezone.utc).isoformat()
     conn = get_connection()
     cursor = conn.execute(
@@ -420,7 +420,7 @@ def start_rewrite(analysis_id: str) -> str | None:
 
 
 def save_rewrite(analysis_id: str, rewritten_text: str) -> None:
-    """Сохраняет завершённый rewrite: текст + status=completed."""
+    """Saves a completed rewrite: text + status=completed."""
     conn = get_connection()
     conn.execute(
         "UPDATE analyses SET rewritten_text = ?, rewritten_at = ?, "
@@ -432,7 +432,7 @@ def save_rewrite(analysis_id: str, rewritten_text: str) -> None:
 
 
 def fail_rewrite(analysis_id: str, error: str) -> None:
-    """Помечает rewrite как failed с текстом ошибки."""
+    """Marks a rewrite as failed with an error message."""
     conn = get_connection()
     conn.execute(
         "UPDATE analyses SET rewrite_status = 'failed', rewrite_error = ? WHERE id = ?",
@@ -443,13 +443,13 @@ def fail_rewrite(analysis_id: str, error: str) -> None:
 
 
 def get_rewrite(analysis_id: str, timeout_minutes: int = REWRITE_TIMEOUT_MINUTES) -> dict:
-    """Возвращает текущее состояние rewrite.
+    """Returns the current rewrite state.
 
-    Результат: {status: none|running|completed|failed|not_found, error,
-                rewritten_text, rewritten_at, started_at}
+    Result: {status: none|running|completed|failed|not_found, error,
+             rewritten_text, rewritten_at, started_at}
 
-    Застрявшие в 'running' дольше timeout_minutes автоматически помечаются failed
-    (защита от рестарта сервера посреди генерации).
+    Jobs stuck in 'running' for longer than timeout_minutes are auto-marked failed
+    (protection against a server restart mid-generation).
     """
     conn = get_connection()
     row = conn.execute(
@@ -462,10 +462,10 @@ def get_rewrite(analysis_id: str, timeout_minutes: int = REWRITE_TIMEOUT_MINUTES
         return {"status": "not_found", "error": "", "rewritten_text": "", "rewritten_at": "", "started_at": ""}
 
     d = dict(row)
-    # Легаси-строки (до миграции): есть текст, но нет статуса → считаем completed
+    # Legacy rows (pre-migration): text present but no status → treat as completed
     status = d["rewrite_status"] or ("completed" if (d["rewritten_text"] or "").strip() else "none")
 
-    # Авто-таймаут застрявших rewrite
+    # Auto-timeout stuck rewrites
     if status == "running" and d["rewrite_started_at"]:
         try:
             started = datetime.fromisoformat(d["rewrite_started_at"])
@@ -495,7 +495,7 @@ def get_rewrite(analysis_id: str, timeout_minutes: int = REWRITE_TIMEOUT_MINUTES
 # ── Auth sessions ─────────────────────────
 
 def create_session(token_hash: str, password_sha: str, expires_at: str) -> None:
-    """Создаёт сессию. Хранится ТОЛЬКО хэш токена — сам токен не персистится."""
+    """Creates a session. Only the token hash is stored — the token itself is never persisted."""
     conn = get_connection()
     conn.execute(
         "INSERT OR REPLACE INTO auth_sessions (token_hash, password_sha, created_at, expires_at) "
@@ -507,7 +507,7 @@ def create_session(token_hash: str, password_sha: str, expires_at: str) -> None:
 
 
 def get_session(token_hash: str) -> Optional[dict]:
-    """Возвращает сессию по хэшу токена или None."""
+    """Returns the session by token hash, or None."""
     conn = get_connection()
     row = conn.execute(
         "SELECT token_hash, password_sha, created_at, expires_at FROM auth_sessions WHERE token_hash = ?",
@@ -518,7 +518,7 @@ def get_session(token_hash: str) -> Optional[dict]:
 
 
 def touch_session(token_hash: str, expires_at: str) -> None:
-    """Sliding-продление сессии: сдвигает expires_at вперёд."""
+    """Sliding session renewal: pushes expires_at forward."""
     conn = get_connection()
     conn.execute(
         "UPDATE auth_sessions SET expires_at = ? WHERE token_hash = ?",
@@ -529,7 +529,7 @@ def touch_session(token_hash: str, expires_at: str) -> None:
 
 
 def delete_expired_sessions() -> None:
-    """Удаляет истёкшие сессии. Вызывается при успешном login — таблица не разрастается."""
+    """Deletes expired sessions. Called on a successful login — the table stays small."""
     conn = get_connection()
     conn.execute("DELETE FROM auth_sessions WHERE expires_at < ?", (datetime.now(timezone.utc).isoformat(),))
     conn.commit()

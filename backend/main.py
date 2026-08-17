@@ -12,9 +12,10 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# CORS: в проде с Next rewrites единый origin — CORS не участвует. Список
-# нужен для dev (localhost:3000 → localhost:8000) и прямого доступа к API.
-# allow_credentials=False всегда: токен в заголовке, не в cookie.
+# CORS: in prod with Next rewrites there is a single origin — CORS is not
+# involved. The list is needed for dev (localhost:3000 → localhost:8000) and
+# direct API access. allow_credentials=False always: the token travels in a
+# header, not a cookie.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -23,7 +24,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Публичные роуты: login + health. Всё остальное — под require_auth.
+# Public routes: login + health. Everything else — behind require_auth.
 app.include_router(auth_router)
 
 
@@ -47,8 +48,9 @@ app.include_router(rewrite.router, dependencies=[Depends(require_auth)])
 @app.on_event("startup")
 async def startup():
     init_db()
-    # Fail-fast: без пароля прод-режим не стартует. Обход — явный AUTH_DISABLED=1
-    # для локальной разработки (в compose/проде не выставляется).
+    # Fail-fast: without a password prod mode does not start. The escape hatch
+    # is the explicit AUTH_DISABLED=1 for local development (never set in
+    # compose/prod).
     if not ADMIN_PASSWORD and not AUTH_DISABLED:
         raise RuntimeError(
             "SERPXRAY_ADMIN_PASSWORD is not set. "

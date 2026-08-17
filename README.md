@@ -1,28 +1,29 @@
-# SERP-рентген 🔍
+# SERP X-Ray 🔍
 
-Локальный веб-инструмент для конкурентного анализа поисковой выдачи. Принимает поисковый запрос → парсит топ-20 через SerpAPI → через OpenRouter (LLM) извлекает Knowledge Graph сущности из каждой страницы → сравнивает с вашей страницей → строит граф разрывов → выдаёт приоритизированный чек-лист действий.
+A local web tool for competitive SERP analysis. It takes a search query → parses the top-20 results via SerpAPI → extracts Knowledge Graph entities from every page via OpenRouter (LLM) → compares them against your page → builds a gap graph → returns a prioritized action checklist.
 
-## Что это
+## What it is
 
-Инструмент помогает SEO-специалистам быстро понять:
-- Какие сущности (Person, Organization, Concept, Product, Event) присутствуют в топе выдачи
-- Какие из них отсутствуют на вашей странице
-- Насколько ваша страница отстаёт по entity-покрытию
-- Что конкретно нужно добавить (чек-лист с приоритетами)
+The tool helps SEO specialists quickly understand:
 
-## Стек
+- Which entities (Person, Organization, Concept, Product, Event) appear in the top of the SERP
+- Which of them are missing from your page
+- How far your page lags in entity coverage
+- What exactly to add (a prioritized checklist)
 
-| Уровень | Технология |
-|---------|-----------|
-| Бэкенд  | Python 3.11+, FastAPI, httpx, Pydantic |
-| LLM     | OpenRouter API (openai/gpt-4o, claude-sonnet-4, gemini-2.5-flash — сменная модель) |
-| Поиск   | SerpAPI (Google organic results, топ-20) |
-| Фронтенд | TypeScript, Next.js 14, shadcn/ui, D3.js |
-| БД      | SQLite (история запросов, настройки) |
+## Stack
 
-## Запуск локально
+| Layer    | Technology |
+|----------|-----------|
+| Backend  | Python 3.11+, FastAPI, httpx, Pydantic |
+| LLM      | OpenRouter API (openai/gpt-4o, claude-sonnet-4, gemini-2.5-flash — swappable model) |
+| Search   | SerpAPI (Google organic results, top-20) |
+| Frontend | TypeScript, Next.js 14, shadcn/ui, D3.js |
+| DB       | SQLite (query history, settings) |
 
-### 1. Бэкенд
+## Run locally
+
+### 1. Backend
 
 ```bash
 cd backend
@@ -32,12 +33,12 @@ pip install -r requirements.txt
 uvicorn main:app --port 8000 --reload
 ```
 
-> Авторизация: с недавних пор backend **не стартует** без `SERPXRAY_ADMIN_PASSWORD`
-> (fail-fast). Для локального запуска: либо задайте его в `backend/.env`, либо
-> `SERPXRAY_AUTH_DISABLED=1` (только для разработки). Фронтенд попросит пароль
-> на `/login` (токен живёт в `sessionStorage`).
+> Auth: the backend **does not start** without `SERPXRAY_ADMIN_PASSWORD` (fail-fast)
+> anymore. For local dev, either set it in `backend/.env`, or
+> `SERPXRAY_AUTH_DISABLED=1` (development only). The frontend asks for the password
+> on `/login` (the token lives in `sessionStorage`).
 
-### 2. Фронтенд
+### 2. Frontend
 
 ```bash
 cd frontend
@@ -45,70 +46,70 @@ npm install
 npm run dev
 ```
 
-### 3. Открыть
+### 3. Open
 
-- Приложение: http://localhost:3000
-- Swagger API: http://localhost:8000/docs (требует `X-Auth-Token`)
+- App: http://localhost:3000
+- Swagger API: http://localhost:8000/docs (requires `X-Auth-Token`)
 
-## Запуск в проде (Docker)
+## Production (Docker)
 
-Полный стек — `docker-compose.yml` (backend + frontend + Caddy для HTTPS):
+The full stack — `docker-compose.yml` (backend + frontend + Caddy for HTTPS):
 
 ```bash
-cp .env.example .env   # заполнить ключи + пароль + домен
+cp .env.example .env   # fill in keys + password + domain
 docker compose up -d --build
 ```
 
-- **HTTPS обязателен**: Caddy выпускает Let's Encrypt для `SERPXRAY_DOMAIN`
-  автоматически. Без HTTPS пароль и токен идут открытым текстом — не выключать.
-- Backend-порт `8000` наружу **не публикуется** — доступ только через Next
-  (`/api/*` проксируется rewrites, единый origin).
-- Данные: SQLite в volume `serp_data` (переживает рестарты и пересборки).
-  Бэкап одной командой:
+- **HTTPS is mandatory**: Caddy issues a Let's Encrypt cert for `SERPXRAY_DOMAIN`
+  automatically. Without HTTPS the password and token travel in cleartext — do not disable it.
+- The backend port `8000` is **not published** externally — access is only through Next
+  (`/api/*` is proxied via rewrites, a single origin).
+- Data: SQLite in the `serp_data` volume (survives restarts and rebuilds).
+  Back it up with a single command:
   ```bash
   docker compose exec backend sh -c 'cat /app/data/serp-xray.db' > serp-xray-$(date +%F).db
   ```
-- Перед обновлением образа — сделайте бэкап БД (см. выше). Схема применяется
-  идемпотентно при старте backend (`init_db()`), Alembic не используется.
+- Before upgrading the image — back up the DB (see above). The schema is applied
+  idempotently on backend startup (`init_db()`); Alembic is not used.
 
-### Известные ограничения прод-режима
+### Known production-mode limitations
 
-- **SSRF-защита**: блокирует private/loopback/link-local + cloud metadata IP,
-  DNS-запросы идут на проверенный IP (pinning), редиректы проверяются походово.
-  Полная защита от DNS-rebinding с гонкой внутри TCP-хендшейка **не** реализована
-  (для этого нужен кастомный резолвер на уровне сокета) — для личного
-  инструмента это осознанный компромисс.
-- **Rate limit** сбрасывается при рестарте контейнера — это защита от всплесков,
-  не от целевого злоумышленника (главная защита — пароль + HTTPS).
-- Один uvicorn-воркер намеренно (SQLite + in-memory rate limit).
+- **SSRF protection**: blocks private/loopback/link-local + cloud metadata IPs,
+  DNS requests go to the verified IP (pinning), redirects are re-validated hop-by-hop.
+  Full protection against DNS rebinding with a race inside the TCP handshake is **not**
+  implemented (that needs a custom socket-level resolver) — a conscious compromise for
+  a personal tool.
+- **Rate limit** resets on container restart — this guards against bursts, not a
+  targeted attacker (the primary defense is the password + HTTPS).
+- A single uvicorn worker is intentional (SQLite + in-memory rate limit).
 
-## Переменные окружения
+## Environment variables
 
-В prod: ключи и настройки в `.env` (см. `.env.example`). В dev ключи по-прежнему
-подхватываются из `~/.hermes/.env` (legacy), приоритет: окружение → `backend/.env`
+In prod: keys and settings live in `.env` (see `.env.example`). In dev the keys are still
+read from `~/.hermes/.env` (legacy). Priority: environment → `backend/.env`
 → `~/.hermes/.env`.
 
-## Возможности
+## Features
 
-- 🔍 Анализ любого поискового запроса — топ-20 organic results
-- 🧠 Извлечение Knowledge Graph сущностей через LLM
-- 📊 Визуализация графа сущностей (D3.js force-directed graph)
-- 🆚 Сравнение вашей страницы с топ-3 выдачи
-- 📋 Приоритизированный чек-лист действий (critical → low)
-- ⚙️ Админ-панель: смена модели OpenRouter, редактирование промптов
-- 📜 История всех анализов (SQLite)
+- 🔍 Analyze any search query — top-20 organic results
+- 🧠 Extract Knowledge Graph entities via LLM
+- 📊 Entity graph visualization (D3.js force-directed graph)
+- 🆚 Compare your page against the top-3 results
+- 📋 Prioritized action checklist (critical → low)
+- ⚙️ Admin panel: switch the OpenRouter model, edit prompts
+- 📜 History of all analyses (SQLite)
 
-## Модели OpenRouter (по умолчанию)
+## OpenRouter models (default)
 
-| Модель | Особенность |
+| Model | Notes |
 |--------|------------|
-| `openai/gpt-4o` | Баланс цена/качество (по умолчанию) |
-| `anthropic/claude-sonnet-4` | Лучшее качество извлечения сущностей |
-| `google/gemini-2.5-flash` | Быстрый и дешёвый |
-| `deepseek/deepseek-v4-pro` | Хорош для русского языка |
+| `openai/gpt-4o` | Best price/quality balance (default) |
+| `anthropic/claude-sonnet-4` | Best entity extraction quality |
+| `google/gemini-2.5-flash` | Fast and cheap |
+| `deepseek/deepseek-v4-pro` | Good for Russian |
 
-Модель можно сменить в админ-панели без перезапуска.
+The model can be changed in the admin panel without a restart.
 
 ---
 
-*Создано как часть Agent OS. Исследования: `research/2026-08-07-ai-seo-marketing-ideas`, `research/2026-08-07-ai-seo-deep-dive`*
+*Created as part of Agent OS. Research: `research/2026-08-07-ai-seo-marketing-ideas`, `research/2026-08-07-ai-seo-deep-dive`*

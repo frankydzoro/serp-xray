@@ -85,7 +85,7 @@ export default function HomePage() {
       const url = inputMode === "url" ? form.url.trim() || undefined : undefined;
       const { id } = await analyzeQuery(form.query.trim(), url, userText, form.engine);
       setModalOpen(false);
-      // Результаты — только на странице репорта
+      // Results live only on the report page
       router.push(`/report/${id}`);
     } catch (err: any) {
       setError(err.message || "Failed to start analysis");

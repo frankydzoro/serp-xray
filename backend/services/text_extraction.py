@@ -1,15 +1,15 @@
-"""Извлечение текста страницы с сохранением структуры (Markdown).
+"""Page text extraction with structure preservation (Markdown).
 
-Архитектура (по ТЗ 2026-08-10):
-1. Trafilatura (favor_recall=True, output_format="markdown") — основной метод.
-2. Quality gate: длина + наличие Markdown-заголовков против DOM-кандидата.
-3. Если Trafilatura потерял заголовки или текст подозрительно короткий —
-   BS4-структурное извлечение (h1..h6 -> #, p -> текст, li -> -, table -> markdown).
-4. Грубый fallback — get_text().
-5. Обрезка до MAX_PAGE_CHARS — по блокам (не по символам).
+Architecture (per spec 2026-08-10):
+1. Trafilatura (favor_recall=True, output_format="markdown") — primary method.
+2. Quality gate: length + Markdown headings vs the DOM candidate.
+3. If Trafilatura dropped headings or the text is suspiciously short —
+   BS4 structural extraction (h1..h6 -> #, p -> text, li -> -, table -> markdown).
+4. Crude fallback — get_text().
+5. Truncation to MAX_PAGE_CHARS — by blocks (not by characters).
 
-Метаданные (author, datePublished, JSON-LD) сознательно не извлекаются —
-отдельная задача, для текущего фикса не критична.
+Metadata (author, datePublished, JSON-LD) is intentionally not extracted — a
+separate task, not critical for the current fix.
 """
 import logging
 import re
@@ -23,13 +23,13 @@ from config import MAX_PAGE_CHARS
 
 logger = logging.getLogger(__name__)
 
-# ── Пороги качества ─────────────────────────────────────────
-MIN_TEXT_LEN = 300              # текст короче — считаем провалом
-MIN_HALF_RATIO = 0.5            # текст < 50% от DOM-кандидата — считаем провалом
-MIN_H2_FOR_GATE = 2             # в DOM >= 2 H2, а в markdown 0 — заголовки потеряны
+# ── Quality thresholds ──────────────────────────────────────
+MIN_TEXT_LEN = 300              # text shorter than this → considered a failure
+MIN_HALF_RATIO = 0.5            # text < 50% of the DOM candidate → considered a failure
+MIN_H2_FOR_GATE = 2             # ≥2 H2 in the DOM but 0 in markdown → headings lost
 
-# ── Каскад селекторов основного контента ───────────────────
-# Общие селекторы — работают на большинстве шаблонов.
+# ── Main content selector cascade ───────────────────────────
+# Generic selectors — work on most templates.
 MAIN_CONTENT_SELECTORS = [
     "article",
     '[itemprop="articleBody"]',
@@ -40,20 +40,20 @@ MAIN_CONTENT_SELECTORS = [
     "#content",
 ]
 
-# Доменные оверрайды — ТОЛЬКО как дополнительный приоритет,
-# а не единственный путь (для шаблонов без article/main).
-# Роселторг: статья лежит в div.article-reader, article/main в DOM нет.
+# Domain overrides — ONLY as extra priority, not the sole path
+# (for templates without article/main).
+# Roseltorg: the article lives in div.article-reader, there is no article/main in the DOM.
 DOMAIN_SELECTORS = {
     "cv.roseltorg.ru": [".article-reader"],
 }
 
-# Регэксп Markdown-заголовков: строка начинается с 1-6 '#' + пробел
+# Regex for Markdown headings: a line starting with 1-6 '#' + a space
 MD_HEADING_RE = re.compile(r"^#{1,6}\s", re.MULTILINE)
 
 
 @dataclass
 class PageTextResult:
-    """Результат извлечения текста + метрики качества."""
+    """Text extraction result + quality metrics."""
     text: str
     method: str                # trafilatura | bs4_structural | raw_text
     char_count: int
@@ -67,7 +67,7 @@ class PageTextResult:
 # ── Quality helpers ─────────────────────────────────────────
 
 def count_markdown_headings(text: str) -> int:
-    """Число Markdown-заголовков (#/##/###...) в тексте."""
+    """Number of Markdown headings (#/##/###...) in the text."""
     if not text:
         return 0
     return len(MD_HEADING_RE.findall(text))
@@ -86,10 +86,10 @@ def _heading_counts(text: str) -> dict[str, int]:
 
 
 def smart_truncate(text: str, limit: int = MAX_PAGE_CHARS) -> tuple[str, bool]:
-    """Обрезка по блокам (абзацам), а не по символам.
+    """Truncation by blocks (paragraphs), not by characters.
 
-    Возвращает (обрезанный_текст, был_ли_обрезан).
-    Если лимит меньше первого блока — жёстко режем по limit (лучше что-то, чем ничего).
+    Returns (truncated_text, was_truncated).
+    If the limit is smaller than the first block — hard-cut at limit (better something than nothing).
     """
     if len(text) <= limit:
         return text, False
@@ -111,10 +111,10 @@ def smart_truncate(text: str, limit: int = MAX_PAGE_CHARS) -> tuple[str, bool]:
     return truncated, True
 
 
-# ── Извлечение: Trafilatura ─────────────────────────────────
+# ── Extraction: Trafilatura ─────────────────────────────────
 
 def _extract_with_trafilatura(html: str) -> Optional[str]:
-    """Trafilatura в recall-режиме (больше текста, markdown, без ссылок/картинок)."""
+    """Trafilatura in recall mode (more text, markdown, no links/images)."""
     try:
         import trafilatura
         extracted = trafilatura.extract(
@@ -132,7 +132,7 @@ def _extract_with_trafilatura(html: str) -> Optional[str]:
     return None
 
 
-# ── Извлечение: BS4 structural ──────────────────────────────
+# ── Extraction: BS4 structural ──────────────────────────────
 
 def _domain_for_url(url: Optional[str]) -> str:
     if not url:
@@ -145,7 +145,7 @@ def _domain_for_url(url: Optional[str]) -> str:
 
 
 def find_content_candidate(soup: BeautifulSoup, url: Optional[str] = None) -> Optional[Tag]:
-    """Ищет контейнер основного контента (каскад селекторов + доменные оверрайды)."""
+    """Finds the main content container (selector cascade + domain overrides)."""
     selectors: list[str] = []
     domain = _domain_for_url(url)
     if domain in DOMAIN_SELECTORS:
@@ -173,13 +173,13 @@ def _blockquote_to_md(el: Tag) -> list[str]:
 
 
 def _table_to_md(el: Tag) -> list[str]:
-    """HTML-таблица -> Markdown-таблица (| a | b | / |---|)."""
+    """HTML table -> Markdown table (| a | b | / |---|)."""
     rows: list[list[str]] = []
     for tr in el.find_all("tr"):
         cells = []
         for cell in tr.find_all(["td", "th"]):
             txt = cell.get_text(" ", strip=True)
-            # экранируем пайпы внутри ячеек, чтобы не ломать markdown
+            # escape pipes inside cells so they don't break the markdown
             txt = txt.replace("|", "\\|")
             cells.append(txt)
         if cells:
@@ -198,7 +198,7 @@ def _table_to_md(el: Tag) -> list[str]:
 
 
 def _walk_blocks(el: Tag, out: list[str]) -> None:
-    """Рекурсивный обход DOM-кандидата, превращение структуры в Markdown."""
+    """Recursive walk of the DOM candidate, converting structure to Markdown."""
     for child in el.children:
         if isinstance(child, NavigableString):
             continue
@@ -206,7 +206,7 @@ def _walk_blocks(el: Tag, out: list[str]) -> None:
             continue
         name = child.name.lower()
 
-        # Служебные/нежелательные блоки — пропускаем целиком
+        # Service/undesirable blocks — skip entirely
         if name in ("script", "style", "nav", "footer", "header", "aside", "noscript"):
             continue
 
@@ -229,16 +229,16 @@ def _walk_blocks(el: Tag, out: list[str]) -> None:
         elif name == "blockquote":
             out.extend(_blockquote_to_md(child))
         elif name in ("div", "section", "article", "main", "td", "th", "span", "figure", "figcaption"):
-            # пропускаем вложенные article/main — они уже обработаны на верхнем уровне
+            # skip nested article/main — already handled at the top level
             if name in ("article", "main") and child is not el:
                 continue
             _walk_blocks(child, out)
-        # прочие (a, strong, em, img-обёртки и т.д.) — игнорируем, их текст
-        # попадает через родительские p/h/li
+        # the rest (a, strong, em, img-wrappers, etc.) — ignored; their text
+        # is captured through the parent p/h/li
 
 
 def _extract_with_bs4_structure(soup: BeautifulSoup, url: Optional[str] = None) -> Optional[str]:
-    """BS4-структурное извлечение: h1..h6 -> #, ul/ol -> -, table -> markdown."""
+    """BS4 structural extraction: h1..h6 -> #, ul/ol -> -, table -> markdown."""
     candidate = find_content_candidate(soup, url)
     if candidate is None:
         return None
@@ -252,10 +252,10 @@ def _extract_with_bs4_structure(soup: BeautifulSoup, url: Optional[str] = None) 
     return text
 
 
-# ── Извлечение: raw fallback ────────────────────────────────
+# ── Extraction: raw fallback ────────────────────────────────
 
 def _extract_raw_text(soup: BeautifulSoup) -> str:
-    """Грубый fallback: убираем семантический мусор, склеиваем строки."""
+    """Crude fallback: removes semantic junk, glues lines."""
     for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
         tag.decompose()
     for selector in [
@@ -278,12 +278,12 @@ def _assess_quality(
     soup: BeautifulSoup,
     url: Optional[str],
 ) -> tuple[bool, list[str]]:
-    """Оценивает качество извлечённого текста.
+    """Assesses the quality of the extracted text.
 
-    Возвращает (ok, warnings). Провал, если:
-    - текст короче MIN_TEXT_LEN;
-    - в DOM-кандидате >= MIN_H2_FOR_GATE H2, а в markdown 0;
-    - текст заметно короче DOM-кандидата (< MIN_HALF_RATIO).
+    Returns (ok, warnings). Fails if:
+    - the text is shorter than MIN_TEXT_LEN;
+    - the DOM candidate has >= MIN_H2_FOR_GATE H2 but markdown has 0;
+    - the text is noticeably shorter than the DOM candidate (< MIN_HALF_RATIO).
     """
     warnings: list[str] = []
     if not text:
@@ -311,15 +311,15 @@ def _assess_quality(
     return not warnings, warnings
 
 
-# ── Оркестратор ─────────────────────────────────────────────
+# ── Orchestrator ─────────────────────────────────────────────
 
 def extract_page_text_from_html(html: str, url: Optional[str] = None) -> PageTextResult:
-    """Извлекает текст страницы, сохраняя структуру (Markdown).
+    """Extracts page text while preserving structure (Markdown).
 
-    Каскад: Trafilatura -> quality gate -> BS4 structural -> raw text.
-    Финальный текст прогоняется через clean_article_text() (детерминированная чиста).
-    Обрезка до MAX_PAGE_CHARS НЕ выполняется здесь — она происходит на входе в LLM
-    (entity_extractor.smart_truncate), чтобы отчёт хранил полный текст страницы.
+    Cascade: Trafilatura → quality gate → BS4 structural → raw text.
+    The final text is run through clean_article_text() (deterministic cleanup).
+    Truncation to MAX_PAGE_CHARS is NOT done here — it happens at the LLM input
+    (entity_extractor.smart_truncate), so the report keeps the full page text.
     """
     soup = BeautifulSoup(html, "lxml")
     warnings: list[str] = []

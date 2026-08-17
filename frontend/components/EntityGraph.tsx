@@ -242,14 +242,14 @@ export default function EntityGraph({ entities, cooccurrence, typedEdges, showFi
           ? `<span style="background:#fef2f2;color:#dc2626;padding:1px 6px;border-radius:3px;font-size:10px">⚠ ${d.priority || "gap"}</span>`
           : "";
         const freqText = d.frequency
-          ? `найдена на <strong>${d.frequency}</strong> стр. конкурентов`
+          ? `found on <strong>${d.frequency}</strong> competitor pages`
           : "";
         const ownerBadge =
           d.owner === "user"
-            ? '<span style="color:#22c55e">● ваша</span>'
+            ? '<span style="color:#22c55e">● yours</span>'
             : d.owner === "gap"
-              ? '<span style="color:#ef4444">● разрыв</span>'
-              : '<span style="color:#3b82f6">● конкур.</span>';
+              ? '<span style="color:#ef4444">● gap</span>'
+              : '<span style="color:#3b82f6">● competitor</span>';
 
         tooltipEl.innerHTML = `
           <div style="font-size:13px;line-height:1.5;max-width:260px">
@@ -331,13 +331,13 @@ export default function EntityGraph({ entities, cooccurrence, typedEdges, showFi
       {showFilter && entities.length > TOP_N && (
         <div className="flex items-center justify-between mb-2">
           <span className="text-[11px] text-muted-foreground">
-            Показано {effectiveEntities.length} из {entities.length} сущностей
+            Showing {effectiveEntities.length} of {entities.length} entities
           </span>
           <button
             onClick={() => setShowAll(!showAll)}
             className="text-[11px] font-medium text-primary hover:underline"
           >
-            {showAll ? "Топ-50" : "Все сущности"}
+            {showAll ? "Top 50" : "All entities"}
           </button>
         </div>
       )}
@@ -389,7 +389,7 @@ export default function EntityGraph({ entities, cooccurrence, typedEdges, showFi
         {/* Repulsion slider */}
         <div className="flex items-center gap-2">
           <label className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">
-            Отталкивание
+            Repulsion
           </label>
           <input
             type="range"
@@ -406,7 +406,7 @@ export default function EntityGraph({ entities, cooccurrence, typedEdges, showFi
         {/* Attraction slider */}
         <div className="flex items-center gap-2">
           <label className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">
-            Притяжение
+            Attraction
           </label>
           <input
             type="range"
@@ -434,7 +434,7 @@ export default function EntityGraph({ entities, cooccurrence, typedEdges, showFi
                 className="w-3 h-3 rounded-full ring-1 ring-black/10"
                 style={{ backgroundColor: OWNER_BORDER[owner] || "#94a3b8" }}
               />
-              {owner === "user" ? "Ваши" : owner === "gap" ? "Разрывы" : "Конкуренты"}
+              {owner === "user" ? "Yours" : owner === "gap" ? "Gaps" : "Competitors"}
             </div>
           ))}
         </div>
@@ -464,7 +464,7 @@ export default function EntityGraph({ entities, cooccurrence, typedEdges, showFi
             <svg width="24" height="8" className="shrink-0">
               <line x1="0" y1="4" x2="24" y2="4" stroke="#94a3b8" strokeWidth="2" strokeDasharray="3,3" />
             </svg>
-            Совместная встречаемость
+            Co-occurrence
           </span>
           <span className="flex items-center gap-1.5 font-medium">
             <svg width="28" height="8" className="shrink-0">
@@ -481,7 +481,7 @@ export default function EntityGraph({ entities, cooccurrence, typedEdges, showFi
             className="w-3 h-3 rounded-full border-2 border-dashed"
             style={{ borderColor: "#ef4444", backgroundColor: "transparent" }}
           />
-          Пунктир = разрыв (gap)
+          Dashed = gap
         </div>
       </div>
     </div>

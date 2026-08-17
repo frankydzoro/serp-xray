@@ -4,12 +4,13 @@ import { useEffect } from "react";
 import { getToken } from "@/lib/api";
 
 /**
- * Клиентский guard для UX (реальная защита — на бэкенде, require_auth).
+ * Client-side guard for UX (the real protection is on the backend, require_auth).
  *
- * НЕ блокирует рендер children: страницы отдаются сразу (SSR), а редирект
- * на /login делается мягким JS-эффектом. Это устойчиво к медленной/частичной
- * гидратации и к окружениям, где sessionStorage недоступен (sandbox-браузеры):
- * форма логина на /login видна сразу, без токена API всё равно вернёт 401.
+ * Does NOT block rendering children: pages are served immediately (SSR), and the
+ * redirect to /login is done with a soft JS effect. This is resilient to slow/partial
+ * hydration and to environments where sessionStorage is unavailable (sandboxed
+ * browsers): the login form on /login is visible right away, and without a token
+ * the API returns 401 anyway.
  */
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -17,7 +18,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     const token = getToken();
 
     if (path === "/login") {
-      // С токеном логин не нужен — на главную
+      // With a token, login is unnecessary — go home
       if (token) window.location.href = "/";
       return;
     }

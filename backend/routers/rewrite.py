@@ -19,12 +19,12 @@ from prompts.default import REWRITE_SYSTEM_PROMPT, REWRITE_USER_PROMPT
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["rewrite"])
 
-# Таймаут одного LLM-вызова (rewrite — крупная задача: статья + gaps)
+# Timeout for a single LLM call (rewrite is a big task: article + gaps)
 LLM_TIMEOUT_SECONDS = 180
 
 
 def _format_gaps_for_prompt(gaps: list[dict]) -> str:
-    """Форматирует список gap-сущностей в читаемый текст для промпта."""
+    """Formats the list of gap entities into readable text for the prompt."""
     lines: list[str] = []
     for i, g in enumerate(gaps, 1):
         entity = g.get("entity", "—")
@@ -33,11 +33,11 @@ def _format_gaps_for_prompt(gaps: list[dict]) -> str:
         description = g.get("competitor_description", "") or g.get("description", "")
         recommendation = g.get("recommendation", "")
 
-        line = f"{i}. **{entity}** ({etype}, приоритет: {priority})"
+        line = f"{i}. **{entity}** ({etype}, priority: {priority})"
         if description:
-            line += f"\n   Описание: {description}"
+            line += f"\n   Description: {description}"
         if recommendation:
-            line += f"\n   Рекомендация: {recommendation}"
+            line += f"\n   Recommendation: {recommendation}"
         lines.append(line)
 
     return "\n\n".join(lines)
@@ -51,7 +51,7 @@ async def _run_rewrite(
     system_prompt: str,
     user_template: str,
 ):
-    """Фоновая задача: вызывает LLM и сохраняет результат в БД."""
+    """Background task: calls the LLM and saves the result to the DB."""
     gaps_text = _format_gaps_for_prompt(gaps)
     try:
         user_prompt = user_template.format(
@@ -100,11 +100,11 @@ async def _run_rewrite(
 
 @router.post("/rewrite", response_model=RewriteResponse)
 async def rewrite_article(req: RewriteRequest, background_tasks: BackgroundTasks) -> RewriteResponse:
-    """Запускает переписывание статьи в фоне.
+    """Starts the article rewrite in the background.
 
-    Возвращает статус немедленно; результат доступен через
-    GET /api/history/{analysis_id}/rewrite (поллинг).
-    Если rewrite уже выполняется — не дублирует запрос.
+    Returns the status immediately; the result is available via
+    GET /api/history/{analysis_id}/rewrite (polling).
+    If a rewrite is already running — does not duplicate the request.
     """
     if not req.analysis_id:
         raise HTTPException(status_code=400, detail="analysis_id is required")
@@ -115,7 +115,7 @@ async def rewrite_article(req: RewriteRequest, background_tasks: BackgroundTasks
 
     state = get_rewrite(req.analysis_id)
 
-    # Уже выполняется — не дублируем
+    # Already running — don't duplicate
     if state["status"] == "running":
         return RewriteResponse(
             rewritten_text="",
@@ -124,7 +124,7 @@ async def rewrite_article(req: RewriteRequest, background_tasks: BackgroundTasks
             started_at=state["started_at"],
         )
 
-    # Уже готово — возвращаем результат (повторная генерация не нужна)
+    # Already done — return the result (no need to regenerate)
     if state["status"] == "completed" and state["rewritten_text"]:
         return RewriteResponse(
             rewritten_text=state["rewritten_text"],
@@ -165,7 +165,7 @@ async def rewrite_article(req: RewriteRequest, background_tasks: BackgroundTasks
 
 @router.get("/rewrite/{analysis_id}/status", response_model=RewriteResult)
 async def rewrite_status(analysis_id: str) -> RewriteResult:
-    """Поллинг статуса rewrite. Авто-таймаут застрявших — внутри get_rewrite()."""
+    """Polls the rewrite status. Auto-timeout of stuck jobs — inside get_rewrite()."""
     state = get_rewrite(analysis_id)
     if state["status"] == "not_found":
         raise HTTPException(status_code=404, detail="Analysis not found")

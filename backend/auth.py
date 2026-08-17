@@ -1,18 +1,18 @@
-"""Авторизация SERP X-Ray для не-локального запуска.
+"""SERP X-Ray auth for non-local deployment.
 
-Схема: сессионные токены.
-  POST /api/login {password} → проверка через secrets.compare_digest →
-  токен = secrets.token_urlsafe(32) → в БД хранится ТОЛЬКО sha256(токена) →
-  дальше каждый запрос к /api/* несёт X-Auth-Token.
+Scheme: session tokens.
+  POST /api/login {password} → checked via secrets.compare_digest →
+  token = secrets.token_urlsafe(32) → only sha256(token) is stored in the DB →
+  every subsequent /api/* request carries X-Auth-Token.
 
-Смена пароля (env SERPXRAY_ADMIN_PASSWORD + restart) мгновенно инвалидирует
-все сессии: password_sha сверяется при каждом запросе.
+Changing the password (env SERPXRAY_ADMIN_PASSWORD + restart) instantly
+invalidates all sessions: password_sha is checked on every request.
 
-Защита от брутфорса:
-  - /api/login — ГЛОБАЛЬНЫЙ бакет (не per-IP: за прокси все запросы с одного
-    внутреннего IP, per-IP лимит бессмыслен). Макс 5 неудачных попыток/мин,
-    при превышении — блокировка на 5 минут.
-  - /api/analyze — лимит ПО ТОКЕНУ сессии (10/мин), не по IP.
+Brute-force protection:
+  - /api/login — a GLOBAL bucket (not per-IP: behind a proxy all requests come
+    from one internal IP, a per-IP limit is meaningless). Max 5 failed
+    attempts/min, beyond that — a 5-minute lockout.
+  - /api/analyze — limited per session TOKEN (10/min), not per IP.
 """
 import asyncio
 import hashlib
@@ -30,7 +30,7 @@ from db import create_session, delete_expired_sessions, get_session, touch_sessi
 
 router = APIRouter(prefix="/api", tags=["auth"])
 
-# ── Тюнинг ────────────────────────────────
+# ── Tuning ────────────────────────────────
 LOGIN_MAX_FAILS_PER_MIN = 5
 LOGIN_LOCKOUT_SECONDS = 300
 ANALYZE_MAX_PER_MIN = 10
@@ -48,7 +48,7 @@ def _expires_iso() -> str:
     return (datetime.now(timezone.utc) + timedelta(days=config.AUTH_SESSION_TTL_DAYS)).isoformat()
 
 
-# ── Login: глобальный бакет ───────────────
+# ── Login: global bucket ───────────────────
 _login_fail_ts: deque = deque()
 _login_lockout_until = 0.0
 _login_lock = asyncio.Lock()
@@ -75,14 +75,14 @@ class LoginRequest(BaseModel):
 
 @router.post("/login")
 async def login(req: LoginRequest):
-    """Проверяет пароль и выдаёт сессионный токен (сам пароль больше нигде не ходит)."""
+    """Checks the password and issues a session token (the password itself never travels again)."""
     if _login_blocked():
         raise HTTPException(
             status_code=429,
             detail="Too many failed login attempts. Try again later.",
         )
 
-    # AUTH_DISABLED — локальная разработка без пароля
+    # AUTH_DISABLED — local development without a password
     if config.AUTH_DISABLED:
         return {"token": "", "disabled": True}
 
@@ -92,7 +92,7 @@ async def login(req: LoginRequest):
         await _register_login_failure()
         raise HTTPException(status_code=401, detail="Invalid password")
 
-    # Успех: чистим истёкшие сессии (без отдельного cron — таблица не разрастается)
+    # Success: clean up expired sessions (no separate cron — the table stays small)
     delete_expired_sessions()
 
     token = secrets.token_urlsafe(32)
@@ -104,12 +104,12 @@ async def login(req: LoginRequest):
     return {"token": token}
 
 
-# ── Dependency: защита всех /api/* ────────
+# ── Dependency: protects all /api/* ────────
 async def require_auth(x_auth_token: Optional[str] = Header(default=None, alias="X-Auth-Token")) -> str:
-    """FastAPI-dependency. Возвращает token_hash (ключ для rate limit по токену).
+    """FastAPI dependency. Returns token_hash (the key for per-token rate limiting).
 
-    HTTP-заголовки регистронезависимы: и X-Auth-Token, и x-auth-token работают.
-    Все ошибки возвращают одинаковый 401 — детали не раскрываются.
+    HTTP headers are case-insensitive: both X-Auth-Token and x-auth-token work.
+    All failures return the same 401 — details are not disclosed.
     """
     if config.AUTH_DISABLED:
         return "auth-disabled"
@@ -123,30 +123,30 @@ async def require_auth(x_auth_token: Optional[str] = Header(default=None, alias=
     if not session:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    # Срок действия
+    # Expiry
     if session["expires_at"] < _now_iso():
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    # Смена пароля в env инвалидирует все старые сессии
+    # A password change in env invalidates all old sessions
     if not secrets.compare_digest(
         session["password_sha"].encode("utf-8"),
         _sha256_hex(config.ADMIN_PASSWORD).encode("utf-8"),
     ):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    # Sliding-продление
+    # Sliding renewal
     touch_session(token_hash, _expires_iso())
     return token_hash
 
 
-# ── Rate limit: /api/analyze по токену ────
+# ── Rate limit: /api/analyze per token ─────
 _analyze_hits: dict = {}
 _analyze_lock = asyncio.Lock()
 
 
 async def rate_limit_analyze(token_hash: str = Depends(require_auth)) -> str:
-    """Лимит запусков анализа: 10/мин на сессионный токен (не на IP — за прокси
-    IP всегда один и тот же). Возвращает token_hash для дальнейшего использования."""
+    """Limit on analysis starts: 10/min per session token (not per IP — behind a
+    proxy the IP is always the same). Returns token_hash for further use."""
     if config.AUTH_DISABLED:
         return token_hash
 
