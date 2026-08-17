@@ -1,0 +1,60 @@
+services:
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      # За прокси (Next rewrites) все запросы приходят с одного internal IP —
+      # для rate limit читаем реального клиента из X-Forwarded-For
+      SERPXRAY_TRUST_PROXY: "1"
+      SERPXRAY_CORS_ORIGINS: ""
+    volumes:
+      - serp_data:/app/data          # SQLite переживает рестарты
+    expose:
+      - "8000"                       # НЕ публикуем наружу: доступ только из Docker-сети
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    environment:
+      # Next rewrites: /api/* → backend (внутри Docker-сети)
+      BACKEND_URL: http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  # HTTPS обязателен: без него пароль и токен идут открытым текстом.
+  # Caddy сам выпускает Let's Encrypt сертификат для SERPXRAY_DOMAIN.
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SERPXRAY_DOMAIN: ${SERPXRAY_DOMAIN:?set SERPXRAY_DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+    restart: unless-stopped
+
+volumes:
+  serp_data:
+  caddy_data:
+  caddy_config:

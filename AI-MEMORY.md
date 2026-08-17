@@ -1,7 +1,7 @@
 # AI Memory — SERP X-Ray
 
 > For any AI agent working on this project. Load this file first.
-> Last updated: 2026-08-10 (article cleaner + API architecture refresh)
+> Last updated: 2026-08-10 (auth + production readiness)
 
 ## Project
 
@@ -23,6 +23,42 @@ Backend talks to:
 - SerpAPI (Google + Yandex organic results)
 - OpenRouter (LLM: entity extraction + gap analysis)
 - SQLite (history, settings, entity cache)
+
+## Production Readiness / Security (2026-08-10)
+
+Backend auth + prod-обвязка (для не-локального запуска). Полный разбор и решения — Skill `serp-xray` секция "Production Readiness".
+
+**Auth (session tokens):**
+- `POST /api/login {password}` → `secrets.compare_digest` с `SERPXRAY_ADMIN_PASSWORD` → токен `secrets.token_urlsafe(32)`; в БД (`auth_sessions`) хранится ТОЛЬКО `sha256(токена)`.
+- Каждый `/api/*` (кроме `/login`, `/health`) — dependency `require_auth` (в `main.py` через `dependencies=[Depends(require_auth)]` на include_router): сверка хэша + `expires_at > now` + `password_sha == sha256(текущего env-пароля)`. Смена пароля в env мгновенно инвалидирует ВСЕ сессии (без ручной чистки). Sliding-продление `expires_at = now + TTL` (default 30d). Заголовок регистронезависим.
+- Cleanup истёкших сессий — при каждом успешном `/login`, без cron.
+- **Fail-fast:** `main.py` startup бросает RuntimeError, если нет `SERPXRAY_ADMIN_PASSWORD` (кроме явного `SERPXRAY_AUTH_DISABLED=1` для локального dev). Локальную разработку сломать: задать пароль в `backend/.env` или выставить `AUTH_DISABLED`.
+- Брутфорс: глобальный бакет на `/login` (5 неудачных/мин → блокировка 300с).
+- Rate limit: `/api/analyze` — по ТОКЕНУ сессии (10/мин), НЕ по IP (за прокси IP один).
+
+**config.py:** `load_dotenv(override=False)` — приоритет: окружение → `backend/.env` → `~/.hermes/.env` (legacy). Новые: `SERPXRAY_ADMIN_PASSWORD`, `SERPXRAY_AUTH_DISABLED`, `SERPXRAY_TRUST_PROXY`, `SERPXRAY_CORS_ORIGINS`, `SERPXRAY_SESSION_TTL_DAYS`.
+
+**CORS:** `allow_origins` из env, `allow_credentials=False` всегда. В проде с Next rewrites (один origin) CORS не участвует.
+
+**SSRF (`services/serp.py`):**
+- `resolve_and_pin(url)` → `(pinned_url, host)`: резолв всех A/AAAA через `getaddrinfo`, блок `is_private/is_loopback/is_link_local(вкл 169.254.169.254)/is_multicast/is_reserved/is_unspecified` + IPv4-mapped `::ffff:`; IP-литералы проверяются без резолва; схемы только http/https.
+- **DNS pinning:** клиент соединяется с проверенным IP (`Host`-заголовок + `sni_hostname` extension для https), а НЕ пере-резолвит hostname — закрывает rebinding между проверкой и коннектом.
+- Redirects обрабатываются вручную (`follow_redirects=False`, ≤5 хопов) — каждый хоп заново `resolve_and_pin`. Остаточный риск (гонка внутри TCP-хендшейка) задокументирован, не закрыт — для личного инструмента ок.
+- `fetch_page_text` теперь идёт через `_safe_get` (это касается и страниц-конкурентов, и user-URL).
+
+**Rate limit:** in-memory, поэтому ровно **1 uvicorn worker** (SQLite тоже). В compose порт 8000 НЕ публикуется (только `expose`), `SERPXRAY_TRUST_PROXY=1`.
+
+**Frontend (auth):**
+- `lib/api.ts`: `API_BASE = NEXT_PUBLIC_API_URL || ""` (same-origin через rewrites), `getToken/setToken/clearToken` (sessionStorage), `apiFetch(path, init)` подставляет `X-Auth-Token`, на 401 чистит токен и редиректит на `/login`. `login(password)`. `deleteAnalysis`/`bulkDelete` добавлены.
+- `app/login/page.tsx` — форма; `components/AuthGuard.tsx` — клиентский guard. **ПИТФОЛЛ:** AuthGuard НЕ блокирует рендер children (не держит спиннер до ready!) — при проблемной гидратации это вешало страницу навсегда. Правильно: рендерить children сразу, редирект на /login — мягким `useEffect` + `window.location.href` (никакого router.replace в эффекте для статических страниц).
+- `app/history/page.tsx` — хардкод `http://localhost:8000` убран (был известный issue), выборки через `apiFetch/deleteAnalysis/bulkDelete`.
+- `next.config.ts`: `output: 'standalone'` + `rewrites /api/:path* → BACKEND_URL`.
+
+**XSS (шаг 0):** `GapGraph.tsx` тултипы переписаны на `document.createElement`/`textContent` (был `innerHTML` с `d.title/d.url/d.description` — stored XSS кража токена). `EntityGraph.tsx` — dead code, в нём тоже `innerHTML` в тултипе — НЕ рендерится, но удалить при случае.
+
+**Docker:** `backend/Dockerfile`, `frontend/Dockerfile` (standalone), `docker-compose.yml` (backend+frontend+caddy, volume `serp_data:/app/data`, healthcheck, `restart: unless-stopped`, depends_on с условием), `Caddyfile` (Let's Encrypt для `{$SERPXRAY_DOMAIN}`), `.env.example`. HTTPS обязателен — через Caddy.
+
+**Frontend build/standalone:** `next build` генерит `.next/standalone` + `.next/static`; запуск `node server.js` (нужно скопировать `public/` и `.next/static`). Turbopack. FAST-build (~5s), tsc чист, 57 backend-тестов зелёные.
 
 ## Pipeline (Background Task)
 

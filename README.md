@@ -32,6 +32,11 @@ pip install -r requirements.txt
 uvicorn main:app --port 8000 --reload
 ```
 
+> Авторизация: с недавних пор backend **не стартует** без `SERPXRAY_ADMIN_PASSWORD`
+> (fail-fast). Для локального запуска: либо задайте его в `backend/.env`, либо
+> `SERPXRAY_AUTH_DISABLED=1` (только для разработки). Фронтенд попросит пароль
+> на `/login` (токен живёт в `sessionStorage`).
+
 ### 2. Фронтенд
 
 ```bash
@@ -43,16 +48,45 @@ npm run dev
 ### 3. Открыть
 
 - Приложение: http://localhost:3000
-- Swagger API: http://localhost:8000/docs
+- Swagger API: http://localhost:8000/docs (требует `X-Auth-Token`)
+
+## Запуск в проде (Docker)
+
+Полный стек — `docker-compose.yml` (backend + frontend + Caddy для HTTPS):
+
+```bash
+cp .env.example .env   # заполнить ключи + пароль + домен
+docker compose up -d --build
+```
+
+- **HTTPS обязателен**: Caddy выпускает Let's Encrypt для `SERPXRAY_DOMAIN`
+  автоматически. Без HTTPS пароль и токен идут открытым текстом — не выключать.
+- Backend-порт `8000` наружу **не публикуется** — доступ только через Next
+  (`/api/*` проксируется rewrites, единый origin).
+- Данные: SQLite в volume `serp_data` (переживает рестарты и пересборки).
+  Бэкап одной командой:
+  ```bash
+  docker compose exec backend sh -c 'cat /app/data/serp-xray.db' > serp-xray-$(date +%F).db
+  ```
+- Перед обновлением образа — сделайте бэкап БД (см. выше). Схема применяется
+  идемпотентно при старте backend (`init_db()`), Alembic не используется.
+
+### Известные ограничения прод-режима
+
+- **SSRF-защита**: блокирует private/loopback/link-local + cloud metadata IP,
+  DNS-запросы идут на проверенный IP (pinning), редиректы проверяются походово.
+  Полная защита от DNS-rebinding с гонкой внутри TCP-хендшейка **не** реализована
+  (для этого нужен кастомный резолвер на уровне сокета) — для личного
+  инструмента это осознанный компромисс.
+- **Rate limit** сбрасывается при рестарте контейнера — это защита от всплесков,
+  не от целевого злоумышленника (главная защита — пароль + HTTPS).
+- Один uvicorn-воркер намеренно (SQLite + in-memory rate limit).
 
 ## Переменные окружения
 
-Необходимы ключи в `~/.hermes/.env`:
-
-```
-OPENROUTER_API_KEY=sk-or-...
-SERPAPI_API_KEY=...
-```
+В prod: ключи и настройки в `.env` (см. `.env.example`). В dev ключи по-прежнему
+подхватываются из `~/.hermes/.env` (legacy), приоритет: окружение → `backend/.env`
+→ `~/.hermes/.env`.
 
 ## Возможности
 

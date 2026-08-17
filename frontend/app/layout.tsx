@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import AppNav from "@/components/AppNav";
+import AuthGuard from "@/components/AuthGuard";
 import "./globals.css";
 
 const jakarta = Plus_Jakarta_Sans({
@@ -41,7 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AppNav />
         <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-8">
           <Suspense fallback={<div className="flex items-center justify-center py-20"><div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" /></div>}>
-            {children}
+            <AuthGuard>{children}</AuthGuard>
           </Suspense>
         </main>
       </body>

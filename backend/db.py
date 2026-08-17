@@ -2,6 +2,7 @@ import sqlite3
 import json
 import os
 from datetime import datetime, timezone
+from typing import Optional
 
 DB_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 DB_PATH = os.path.join(DB_DIR, "serp-xray.db")
@@ -53,6 +54,16 @@ def init_db():
             entities INTEGER NOT NULL DEFAULT 0,
             updated_at TEXT NOT NULL DEFAULT (datetime('now')),
             PRIMARY KEY (analysis_id, url)
+        );
+
+        -- Авторизация: сессионные токены (хранится ТОЛЬКО sha256 токена, не сам токен).
+        -- password_sha — хэш текущего пароля из env: смена пароля мгновенно
+        -- инвалидирует все старые сессии без ручной чистки (сравнение при каждом запросе).
+        CREATE TABLE IF NOT EXISTS auth_sessions (
+            token_hash TEXT PRIMARY KEY,
+            password_sha TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL
         );
 
         -- Индексы
@@ -479,3 +490,47 @@ def get_rewrite(analysis_id: str, timeout_minutes: int = REWRITE_TIMEOUT_MINUTES
         "rewritten_at": d["rewritten_at"] or "",
         "started_at": d["rewrite_started_at"] or "",
     }
+
+
+# ── Auth sessions ─────────────────────────
+
+def create_session(token_hash: str, password_sha: str, expires_at: str) -> None:
+    """Создаёт сессию. Хранится ТОЛЬКО хэш токена — сам токен не персистится."""
+    conn = get_connection()
+    conn.execute(
+        "INSERT OR REPLACE INTO auth_sessions (token_hash, password_sha, created_at, expires_at) "
+        "VALUES (?, ?, ?, ?)",
+        (token_hash, password_sha, datetime.now(timezone.utc).isoformat(), expires_at),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_session(token_hash: str) -> Optional[dict]:
+    """Возвращает сессию по хэшу токена или None."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT token_hash, password_sha, created_at, expires_at FROM auth_sessions WHERE token_hash = ?",
+        (token_hash,),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def touch_session(token_hash: str, expires_at: str) -> None:
+    """Sliding-продление сессии: сдвигает expires_at вперёд."""
+    conn = get_connection()
+    conn.execute(
+        "UPDATE auth_sessions SET expires_at = ? WHERE token_hash = ?",
+        (expires_at, token_hash),
+    )
+    conn.commit()
+    conn.close()
+
+
+def delete_expired_sessions() -> None:
+    """Удаляет истёкшие сессии. Вызывается при успешном login — таблица не разрастается."""
+    conn = get_connection()
+    conn.execute("DELETE FROM auth_sessions WHERE expires_at < ?", (datetime.now(timezone.utc).isoformat(),))
+    conn.commit()
+    conn.close()

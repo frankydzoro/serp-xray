@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import RewriteModal from "@/components/RewriteModal";
-import { getHistory, getReport } from "@/lib/api";
+import { getHistory, getReport, deleteAnalysis, bulkDelete as apiBulkDelete, apiFetch } from "@/lib/api";
 import { downloadMarkdown, downloadPDF, downloadRewrittenMD } from "@/lib/export";
 
 interface HistoryItem {
@@ -22,8 +22,6 @@ interface HistoryItem {
   has_rewrite?: boolean;
   rewrite_status?: string;
 }
-
-const API_BASE = "http://localhost:8000";
 
 /* ── Empty state ──────────────────────────── */
 function EmptyHistory() {
@@ -138,7 +136,7 @@ export default function HistoryPage() {
 
   const deleteOne = async (id: string) => {
     setActionLoading(id);
-    await fetch(`${API_BASE}/api/history/${id}`, { method: "DELETE" });
+    await deleteAnalysis(id);
     setItems((prev) => prev.filter((i) => i.id !== id));
     setSelected((prev) => {
       const n = new Set(prev);
@@ -152,11 +150,7 @@ export default function HistoryPage() {
     if (selected.size === 0 || !confirm(`Delete ${selected.size} records?`))
       return;
     const ids = [...selected];
-    await fetch(`${API_BASE}/api/history/bulk-delete`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids }),
-    });
+    await apiBulkDelete(ids);
     setItems((prev) => prev.filter((i) => !selected.has(i.id)));
     setSelected(new Set());
   };
@@ -167,7 +161,7 @@ export default function HistoryPage() {
     if (!ids.length) return;
     for (const id of ids) {
       setActionLoading(id);
-      const resp = await fetch(`${API_BASE}/api/history/${id}`);
+      const resp = await apiFetch(`/api/history/${id}`);
       const report = await resp.json();
       const data = report.result_json;
       if (format === "md") {

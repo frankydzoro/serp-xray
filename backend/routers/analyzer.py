@@ -5,7 +5,8 @@ import hashlib
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
+from auth import rate_limit_analyze
 from models.schemas import (
     AnalyzeRequest, AnalyzeResponse, AnalyzeStatus,
     AnalysisReport, Entity, GapItem, CompetitorPage,
@@ -396,8 +397,13 @@ async def _run_pipeline(
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
-async def analyze(req: AnalyzeRequest, background_tasks: BackgroundTasks):
-    """Запускает анализ и сразу возвращает ID. Pipeline выполняется в фоне."""
+async def analyze(
+    req: AnalyzeRequest,
+    background_tasks: BackgroundTasks,
+    _rate_token: str = Depends(rate_limit_analyze),
+):
+    """Запускает анализ и сразу возвращает ID. Pipeline выполняется в фоне.
+    rate_limit_analyze: лимит 10 запусков/мин на сессионный токен + require_auth."""
     model = get_setting("model") or "openai/gpt-4o"
     analysis_id = str(uuid.uuid4())[:12]
 

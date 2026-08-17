@@ -247,26 +247,57 @@ export default function GapGraph({ gaps }: Props) {
       .text((d: any) => truncate(d.name, 14));
 
     // ── Tooltips ──
+    // БЕЗОПАСНОСТЬ: контент (заголовки/URL/описания) приходит с произвольных сайтов
+    // и от LLM — рендерим ТОЛЬКО через textContent, никакого innerHTML (stored XSS).
     const showTooltip = (event: any, d: any) => {
+      tooltipEl.innerHTML = ""; // чистый контейнер, строковых HTML-вставок ниже нет
+      const box = document.createElement("div");
+      box.style.cssText = "font-size:12px;line-height:1.5;max-width:280px";
+
+      const textSpan = (text: string | undefined, style: string) => {
+        const el = document.createElement("span");
+        el.style.cssText = style;
+        el.textContent = text ?? "";
+        return el;
+      };
+
       if (d.kind === "competitor") {
-        tooltipEl.innerHTML = `
-          <div style="font-size:12px;line-height:1.5;max-width:280px">
-            <strong>${d.title || d.name}</strong><br>
-            <span style="color:#64748b;word-break:break-all">${d.url}</span><br>
-            <span style="color:#475569;font-size:11px">
-              ${d.position ? `Позиция ${d.position}` : ""}${d.engine ? ` · ${d.engine}` : ""} — клик, чтобы открыть
-            </span>
-          </div>`;
+        const strong = document.createElement("strong");
+        strong.textContent = d.title || d.name || "";
+        box.appendChild(strong);
+        box.appendChild(document.createElement("br"));
+        box.appendChild(textSpan(d.url, "color:#64748b;word-break:break-all"));
+        box.appendChild(document.createElement("br"));
+        const meta: string[] = [];
+        if (d.position) meta.push(`Позиция ${d.position}`);
+        if (d.engine) meta.push(String(d.engine));
+        meta.push("клик, чтобы открыть");
+        box.appendChild(textSpan(meta.join(" · "), "color:#475569;font-size:11px"));
       } else {
         const pl = PRIORITY_LABEL[d.priority] || d.priority || "gap";
-        tooltipEl.innerHTML = `
-          <div style="font-size:13px;line-height:1.5;max-width:280px">
-            <strong>${d.name}</strong>
-            <span style="background:#fef2f2;color:${PRIORITY_COLOR[d.priority] || "#dc2626"};padding:1px 6px;border-radius:3px;font-size:10px;margin-left:4px">${pl}</span><br>
-            <span style="color:#64748b">${d.type} · ${d.frequency || 1} стр.</span><br>
-            ${d.description ? `<span style="color:#475569;font-size:11px">${d.description.slice(0, 160)}</span>` : ""}
-          </div>`;
+        box.style.fontSize = "13px";
+        const strong = document.createElement("strong");
+        strong.textContent = d.name || "";
+        box.appendChild(strong);
+        const badge = document.createElement("span");
+        badge.style.cssText =
+          `background:#fef2f2;color:${PRIORITY_COLOR[d.priority] || "#dc2626"};` +
+          "padding:1px 6px;border-radius:3px;font-size:10px;margin-left:4px";
+        badge.textContent = pl;
+        box.appendChild(badge);
+        box.appendChild(document.createElement("br"));
+        const typeParts: string[] = [];
+        if (d.type) typeParts.push(String(d.type));
+        if (d.frequency) typeParts.push(`${d.frequency} стр.`);
+        box.appendChild(textSpan(typeParts.join(" · "), "color:#64748b"));
+        if (d.description) {
+          box.appendChild(document.createElement("br"));
+          box.appendChild(
+            textSpan(String(d.description).slice(0, 160), "color:#475569;font-size:11px")
+          );
+        }
       }
+      tooltipEl.appendChild(box);
       tooltipEl.style.display = "block";
       tooltipEl.style.opacity = "1";
     };

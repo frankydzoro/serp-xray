@@ -1,4 +1,68 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// API-клиент SERP X-Ray.
+// API_BASE: пустая строка = same-origin (в проде Next rewrites проксирует /api
+// на backend; в dev `next dev` делает то же). Полный URL через NEXT_PUBLIC_API_URL
+// — только если API живёт на другом origin.
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+
+const TOKEN_KEY = "serpxray_token";
+
+// ── Токен сессии ──────────────────────────
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return sessionStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setToken(token: string) {
+  if (typeof window === "undefined") return;
+  try {
+    if (token) sessionStorage.setItem(TOKEN_KEY, token);
+    else sessionStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* sessionStorage недоступен (private mode и т.п.) — auth работать не будет */
+  }
+}
+
+export function clearToken() {
+  setToken("");
+}
+
+// ── Основной fetch: токен + 401 → /login ──
+export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  const token = getToken();
+  const headers = new Headers(init?.headers || {});
+  if (token) headers.set("X-Auth-Token", token);
+
+  const resp = await fetch(`${API_BASE}${path}`, { ...init, headers });
+
+  if (resp.status === 401 && token) {
+    clearToken();
+    if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+      window.location.href = "/login";
+    }
+  }
+  return resp;
+}
+
+export async function login(password: string): Promise<void> {
+  const resp = await fetch(`${API_BASE}/api/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+  if (!resp.ok) {
+    const err = await resp.text().catch(() => "");
+    throw new Error(resp.status === 429 ? "Too many attempts. Try again later." : err || "Login failed");
+  }
+  const data = await resp.json();
+  if (!data.token) throw new Error("Login failed");
+  setToken(data.token);
+}
+
+/* ── Analysis ───────────────────────────── */
 
 export async function analyzeQuery(
   query: string,
@@ -6,7 +70,7 @@ export async function analyzeQuery(
   userText?: string,
   engine = "google"
 ): Promise<{ id: string }> {
-  const resp = await fetch(`${API_BASE}/api/analyze`, {
+  const resp = await apiFetch(`/api/analyze`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, url, user_text: userText || null, engine }),
@@ -54,7 +118,7 @@ export async function getAnalysisStatus(id: string): Promise<AnalysisStatus> {
   const url = `${API_BASE}/api/analyze/${id}/status`;
   let resp: Response;
   try {
-    resp = await fetch(url);
+    resp = await apiFetch(`/api/analyze/${id}/status`);
   } catch (e: any) {
     throw new Error(`Network error: ${e.message} (${url})`);
   }
@@ -66,23 +130,41 @@ export async function getAnalysisStatus(id: string): Promise<AnalysisStatus> {
 }
 
 export async function getHistory(limit = 50) {
-  const resp = await fetch(`${API_BASE}/api/history?limit=${limit}`);
+  const resp = await apiFetch(`/api/history?limit=${limit}`);
   return resp.json();
 }
 
 export async function getReport(id: string) {
-  const resp = await fetch(`${API_BASE}/api/history/${id}`);
+  const resp = await apiFetch(`/api/history/${id}`);
   if (!resp.ok) throw new Error("Report not found");
   return resp.json();
 }
 
+export async function deleteAnalysis(id: string) {
+  const resp = await apiFetch(`/api/history/${id}`, { method: "DELETE" });
+  if (!resp.ok) throw new Error(`Delete failed: HTTP ${resp.status}`);
+  return resp.json();
+}
+
+export async function bulkDelete(ids: string[]) {
+  const resp = await apiFetch(`/api/history/bulk-delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+  if (!resp.ok) throw new Error(`Bulk delete failed: HTTP ${resp.status}`);
+  return resp.json();
+}
+
+/* ── Admin: модель и промпты ────────────── */
+
 export async function getModel() {
-  const resp = await fetch(`${API_BASE}/api/admin/model`);
+  const resp = await apiFetch(`/api/admin/model`);
   return resp.json();
 }
 
 export async function updateModel(model: string) {
-  const resp = await fetch(`${API_BASE}/api/admin/model`, {
+  const resp = await apiFetch(`/api/admin/model`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model }),
@@ -91,12 +173,12 @@ export async function updateModel(model: string) {
 }
 
 export async function getPrompts() {
-  const resp = await fetch(`${API_BASE}/api/admin/prompts`);
+  const resp = await apiFetch(`/api/admin/prompts`);
   return resp.json();
 }
 
 export async function updatePrompts(entity_prompt: string, gap_prompt: string) {
-  const resp = await fetch(`${API_BASE}/api/admin/prompts`, {
+  const resp = await apiFetch(`/api/admin/prompts`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ entity_prompt, gap_prompt }),
@@ -105,7 +187,7 @@ export async function updatePrompts(entity_prompt: string, gap_prompt: string) {
 }
 
 export async function resetPrompts() {
-  const resp = await fetch(`${API_BASE}/api/admin/prompts/reset`, {
+  const resp = await apiFetch(`/api/admin/prompts/reset`, {
     method: "POST",
   });
   return resp.json();
@@ -168,13 +250,12 @@ export async function fetchModels(params?: {
     }
   }
   const qs = searchParams.toString();
-  const resp = await fetch(`${API_BASE}/api/models${qs ? `?${qs}` : ""}`);
+  const resp = await apiFetch(`/api/models${qs ? `?${qs}` : ""}`);
   if (!resp.ok) {
     throw new Error(`Failed to fetch models: ${resp.status}`);
   }
   return resp.json();
 }
-
 
 /* ── Rewrite ──────────────────────────── */
 
@@ -197,12 +278,12 @@ export interface RewriteState {
 }
 
 export async function getRewriteModel(): Promise<RewriteModelData> {
-  const resp = await fetch(`${API_BASE}/api/admin/rewrite-model`);
+  const resp = await apiFetch(`/api/admin/rewrite-model`);
   return resp.json();
 }
 
 export async function updateRewriteModel(model: string): Promise<RewriteModelData> {
-  const resp = await fetch(`${API_BASE}/api/admin/rewrite-model`, {
+  const resp = await apiFetch(`/api/admin/rewrite-model`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model }),
@@ -211,7 +292,7 @@ export async function updateRewriteModel(model: string): Promise<RewriteModelDat
 }
 
 export async function getRewritePrompts(): Promise<RewritePromptsData> {
-  const resp = await fetch(`${API_BASE}/api/admin/rewrite-prompts`);
+  const resp = await apiFetch(`/api/admin/rewrite-prompts`);
   return resp.json();
 }
 
@@ -219,7 +300,7 @@ export async function updateRewritePrompts(
   system_prompt: string,
   user_prompt: string
 ): Promise<RewritePromptsData> {
-  const resp = await fetch(`${API_BASE}/api/admin/rewrite-prompts`, {
+  const resp = await apiFetch(`/api/admin/rewrite-prompts`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ system_prompt, user_prompt }),
@@ -228,7 +309,7 @@ export async function updateRewritePrompts(
 }
 
 export async function resetRewritePrompts(): Promise<RewritePromptsData> {
-  const resp = await fetch(`${API_BASE}/api/admin/rewrite-prompts/reset`, {
+  const resp = await apiFetch(`/api/admin/rewrite-prompts/reset`, {
     method: "POST",
   });
   return resp.json();
@@ -241,7 +322,7 @@ export async function startRewrite(
   model?: string,
   analysis_id?: string,
 ): Promise<RewriteState> {
-  const resp = await fetch(`${API_BASE}/api/rewrite`, {
+  const resp = await apiFetch(`/api/rewrite`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ article_text, gaps, model, analysis_id }),
@@ -255,7 +336,7 @@ export async function startRewrite(
 
 /** Поллинг состояния rewrite. 404 = анализ не найден. */
 export async function getRewriteStatus(analysisId: string): Promise<RewriteState> {
-  const resp = await fetch(`${API_BASE}/api/rewrite/${analysisId}/status`);
+  const resp = await apiFetch(`/api/rewrite/${analysisId}/status`);
   if (!resp.ok) {
     throw new Error(resp.status === 404 ? "Analysis not found" : `Failed: HTTP ${resp.status}`);
   }
