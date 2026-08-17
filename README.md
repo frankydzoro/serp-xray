@@ -121,7 +121,3 @@ Priority: environment → `backend/.env` → `~/.hermes/.env`.
 - 📋 Prioritized action checklist (critical → low)
 - ⚙️ Admin panel: switch the OpenRouter model, edit prompts
 - 📜 History of all analyses (SQLite)
-
----
-
-*Created as part of Agent OS. Research: `research/2026-08-07-ai-seo-marketing-ideas`, `research/2026-08-07-ai-seo-deep-dive`*
