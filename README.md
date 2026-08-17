@@ -83,11 +83,34 @@ docker compose up -d --build
   targeted attacker (the primary defense is the password + HTTPS).
 - A single uvicorn worker is intentional (SQLite + in-memory rate limit).
 
-## Environment variables
+## API keys
 
-In prod: keys and settings live in `.env` (see `.env.example`). In dev the keys are still
-read from `~/.hermes/.env` (legacy). Priority: environment → `backend/.env`
-→ `~/.hermes/.env`.
+The tool needs two keys (neither is bundled — you bring your own):
+
+| Variable | What it is | Where to get it |
+|----------|-----------|-----------------|
+| `OPENROUTER_API_KEY` | LLM access (entity extraction + gap analysis) | [openrouter.ai/keys](https://openrouter.ai/keys) — create an API key |
+| `SERPAPI_API_KEY` | Google/Yandex SERP results | [serpapi.com](https://serpapi.com/manage-api-key) — free tier: 100 searches/month |
+
+**Local dev** — put them in `backend/.env` (or `~/.hermes/.env`):
+
+```bash
+cd backend
+cat > .env <<'EOF'
+OPENROUTER_API_KEY=sk-or-v1-...
+SERPAPI_API_KEY=...
+EOF
+```
+
+**Production (Docker)** — copy the template and fill it in:
+
+```bash
+cp .env.example .env
+# edit .env: OPENROUTER_API_KEY, SERPAPI_API_KEY, SERPXRAY_ADMIN_PASSWORD, SERPXRAY_DOMAIN
+docker compose up -d --build
+```
+
+Priority: environment → `backend/.env` → `~/.hermes/.env`.
 
 ## Features
 
