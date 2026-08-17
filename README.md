@@ -122,17 +122,6 @@ Priority: environment → `backend/.env` → `~/.hermes/.env`.
 - ⚙️ Admin panel: switch the OpenRouter model, edit prompts
 - 📜 History of all analyses (SQLite)
 
-## OpenRouter models (default)
-
-| Model | Notes |
-|--------|------------|
-| `openai/gpt-4o` | Best price/quality balance (default) |
-| `anthropic/claude-sonnet-4` | Best entity extraction quality |
-| `google/gemini-2.5-flash` | Fast and cheap |
-| `deepseek/deepseek-v4-pro` | Good for Russian |
-
-The model can be changed in the admin panel without a restart.
-
 ---
 
 *Created as part of Agent OS. Research: `research/2026-08-07-ai-seo-marketing-ideas`, `research/2026-08-07-ai-seo-deep-dive`*
